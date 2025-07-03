@@ -22,15 +22,15 @@ api = Api(app=app)
 
 # Error handlers
 @app.errorhandler(404)
-def not_found(e):
+def not_found():
     return jsonify({"error": "Resource not found"}), 404
 
 @app.errorhandler(400)
-def bad_request(e):
+def bad_request():
     return jsonify({"error": "Bad request"}), 400
 
 @app.errorhandler(500)
-def server_error(e):
+def server_error():
     return jsonify({"error": "Internal server error"}), 500
 
 # Register resources

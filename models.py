@@ -60,7 +60,7 @@ class Visit(db.Model, SerializerMixin):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False)
+    date = db.Column(db.DateTime, nullable=False, default=datetime.now())
     summary = db.Column(db.String(200), nullable=False)
     procedure_details = db.Column(db.Text, nullable=False)
     amount_paid = db.Column(db.Float, CheckConstraint('amount_paid >= 0'), nullable=False)
