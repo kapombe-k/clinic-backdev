@@ -81,3 +81,14 @@ class VisitResource(Resource):
         except SQLAlchemyError:
             db.session.rollback()
             return {"message": "Database error"}, 500
+
+class VisitPrescriptionResource(Resource):
+    def get(self, visit_id):
+        visit = Visit.query.get(visit_id)
+        if not visit:
+            return {"message": "Visit not found"}, 404
+        
+        if not visit.prescription:
+            return {"message": "No prescription found for this visit"}, 404
+        
+        return visit.prescription.to_dict()
