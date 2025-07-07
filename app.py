@@ -39,6 +39,7 @@ api.add_resource(PatientSearchResource, '/patients/search')
 api.add_resource(VisitResource, '/visits', '/visits/<int:visit_id>')
 api.add_resource(VisitPrescriptionResource, '/visits/<int:visit_id>/prescription')
 api.add_resource(AppointmentResource, '/appointments', '/appointments/<int:appointment_id>')
+# api.add_resource(DailyAppointmentsResource, '/daily-appointments/<date:date>') to figure out how to query dates on frontend
 api.add_resource(DoctorResource, '/doctors', '/doctors/<int:doctor_id>')
 api.add_resource(PrescriptionResource, '/prescriptions/<int:prescription_id>')
 
@@ -56,4 +57,4 @@ def index():
     })
 
 if __name__ == '__main__':
-    app.run(port=5555, debug=True)
+    app.run(port=5000, debug=True)
