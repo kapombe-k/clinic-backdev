@@ -3,3 +3,4 @@
 /instance
 .env
 .venv
+/resources/__pycache__

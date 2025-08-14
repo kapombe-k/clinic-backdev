@@ -389,3 +389,33 @@ class Technician(db.Model, SerializerMixin):
 
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True)
     user = relationship('User', back_populates='technician')
+
+class AuditLog(db.Model, SerializerMixin):
+    __tablename__ = 'audit_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    target_id = db.Column(db.Integer)  # ID of the affected entity
+    target_type = db.Column(db.String(50))  # e.g., 'patient', 'appointment'
+    details = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = relationship('User', backref='audit_logs')
+    
+    def __repr__(self):
+        return f'<AuditLog {self.action} by {self.user_id}>'
+    
+class TokenBlocklist(db.Model):
+    __tablename__ = 'token_blocklist'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    jti = db.Column(db.String(36), nullable=False, index=True)
+    type = db.Column(db.String(16), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    expires = db.Column(db.DateTime, nullable=False)
+    
+    user = relationship('User', backref='blocked_tokens')
+    
+    def __repr__(self):
+        return f'<BlockedToken {self.jti}>'
