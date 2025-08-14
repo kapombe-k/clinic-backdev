@@ -1,103 +1,391 @@
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import MetaData, CheckConstraint
-from sqlalchemy.orm import validates
+from sqlalchemy import MetaData, CheckConstraint, func, Index
+from sqlalchemy.orm import validates, relationship
 from sqlalchemy_serializer import SerializerMixin
 from datetime import datetime
+import bcrypt
+import re
 
 convention = {
-        "ix": 'ix_%(column_0_label)s',
-        "uq": "uq_%(table_name)s_%(column_0_name)s",
-        "ck": "ck_%(table_name)s_%(constraint_name)s",
-        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-        "pk": "pk_%(table_name)s"
-    }
-
+    "ix": 'ix_%(column_0_label)s',
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
 
 metadata = MetaData(naming_convention=convention)
 db = SQLAlchemy(metadata=metadata)
 
+class User(db.Model, SerializerMixin):
+    __tablename__ = 'users'
+    serialize_rules = (
+        '-password_hash',
+        '-appointments.user',
+        '-inventory_changes.user',
+        '-doctor.user',
+        '-receptionist.user',
+        '-technician.user'
+    )
+
+    ROLES = ['admin', 'doctor', 'receptionist', 'technician', 'patient']
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    last_login = db.Column(db.DateTime)
+
+    # Relationships
+    doctor = relationship('Doctor', back_populates='user', uselist=False)
+    receptionist = relationship('Receptionist', back_populates='user', uselist=False)
+    technician = relationship('Technician', back_populates='user', uselist=False)
+    appointments = relationship('Appointment', back_populates='user')
+    inventory_changes = relationship('InventoryChange', back_populates='user')
+
+    @validates('role')
+    def validate_role(self, key, role):
+        if role not in self.ROLES:
+            raise ValueError(f"Invalid role. Must be one of {', '.join(self.ROLES)}")
+        return role
+
+    @validates('email')
+    def validate_email(self, key, email):
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            raise ValueError("Invalid email address")
+        return email.lower()
+
+    @property
+    def password(self):
+        raise AttributeError('Password is not readable')
+
+    @password.setter
+    def password(self, password):
+        self.password_hash = bcrypt.hashpw(
+            password.encode('utf-8'), 
+            bcrypt.gensalt()
+        ).decode('utf-8')
+
+    def check_password(self, password):
+        return bcrypt.checkpw(
+            password.encode('utf-8'),
+            self.password_hash.encode('utf-8')
+        )
+
+    def get_total_earnings(self):
+        if self.role != 'doctor' or not self.doctor:
+            return 0
+        return sum(t.cost for v in self.doctor.visits for t in v.treatments)
+
 class Patient(db.Model, SerializerMixin):
     __tablename__ = 'patients'
-    serialize_rules = ('-visits.patient', '-appointments.patient')
+    serialize_rules = (
+        '-visits.patient',
+        '-appointments.patient',
+        '-account.patient',
+        '-medical_history.patient'
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    age = db.Column(db.Integer, nullable=False)
-    phone_number = db.Column(db.String(15), nullable=False)
-    address = db.Column(db.String(200), nullable=False)
-    account_type = db.Column(db.String(50), nullable=False)
+    gender = db.Column(db.String(10), nullable=False)
+    phone = db.Column(db.String(15), nullable=False)
+    email = db.Column(db.String(120))
+    date_of_birth = db.Column(db.Date)
+    insurance_id = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, server_default=func.now())
 
-    visits = db.relationship("Visit", back_populates="patient", cascade="all, delete-orphan")
-    appointments = db.relationship("Appointment", back_populates="patient", cascade="all, delete-orphan")
+    # Relationships
+    visits = relationship('Visit', back_populates='patient')
+    appointments = relationship('Appointment', back_populates='patient')
+    account = relationship('Account', back_populates='patient', uselist=False)
+    medical_history = relationship('MedicalHistory', back_populates='patient', uselist=False)
 
-    @validates('phone_number')
-    def validate_phone(self, key, number):
-        if len(number) < 10 or not number.isdigit():
-            raise ValueError("Phone number must be at least 10 digits")
-        return number
-    
-    def get_total_balance(self):
-        return sum(visit.balance for visit in self.visits if visit.balance is not None)
+    @validates('phone')
+    def validate_phone(self, key, phone):
+        if not re.match(r"^\+?[0-9]{10,15}$", phone):
+            raise ValueError("Invalid phone number format")
+        return phone
+
+    @validates('gender')
+    def validate_gender(self, key, gender):
+        if gender.lower() not in ['male', 'female', 'other']:
+            raise ValueError("Gender must be male, female or other")
+        return gender.capitalize()
+
+    def get_age(self):
+        if not self.date_of_birth:
+            return None
+        today = datetime.today()
+        return today.year - self.date_of_birth.year - (
+            (today.month, today.day) < 
+            (self.date_of_birth.month, self.date_of_birth.day)
+        )
+
+    def get_outstanding_balance(self):
+        if not self.account:
+            return 0
+        return self.account.balance
 
 class Doctor(db.Model, SerializerMixin):
     __tablename__ = 'doctors'
-    serialize_rules = ('-visits.doctor', '-appointments.doctor')
+    serialize_rules = (
+        '-user.doctor',
+        '-visits.doctor',
+        '-appointments.doctor',
+        '-treatments.doctor'
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
+    specialty = db.Column(db.String(50), nullable=False)
+    license_number = db.Column(db.String(50), unique=True)
+    hourly_rate = db.Column(db.Float, nullable=False, default=100.0)
+    is_active = db.Column(db.Boolean, default=True)
 
-    visits = db.relationship("Visit", back_populates="doctor", cascade="all, delete-orphan")
-    appointments = db.relationship("Appointment", back_populates="doctor", cascade="all, delete-orphan")
+    # Relationships
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True)
+    user = relationship('User', back_populates='doctor')
+    visits = relationship('Visit', back_populates='doctor')
+    appointments = relationship('Appointment', back_populates='doctor')
+    treatments = relationship('Treatment', back_populates='doctor')
+
+    @validates('hourly_rate')
+    def validate_hourly_rate(self, key, rate):
+        if rate < 0:
+            raise ValueError("Hourly rate cannot be negative")
+        return rate
+
+    def get_current_schedule(self, start_date, end_date):
+        return Appointment.query.filter(
+            Appointment.doctor_id == self.id,
+            Appointment.date.between(start_date, end_date)
+        ).all()
 
 class Visit(db.Model, SerializerMixin):
     __tablename__ = 'visits'
     serialize_rules = (
-        '-patient.visits', 
-        '-doctor.visits', 
-        '-prescription.visit',
-        'prescription',
-        'doctor.name',
-        'doctor.id'
+        '-patient.visits',
+        '-doctor.visits',
+        '-treatments.visit',
+        '-appointment.visit'
     )
 
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False, default=datetime.now())
-    summary = db.Column(db.String(200), nullable=False)
-    procedure_details = db.Column(db.Text, nullable=False)
-    amount_paid = db.Column(db.Float, CheckConstraint('amount_paid >= 0', name='ck_amount_paid'), nullable=False)
-    balance = db.Column(db.Float, nullable=True)
+    visit_type = db.Column(db.String(50))  # e.g., consultation, procedure
+    notes = db.Column(db.Text)
+    duration = db.Column(db.Integer)  # in minutes
 
-    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
+    # Foreign keys
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointments.id'))
 
-    patient = db.relationship("Patient", back_populates="visits")
-    doctor = db.relationship("Doctor", back_populates="visits")
-    prescription = db.relationship("Prescription", back_populates="visit", uselist=False, cascade="all, delete-orphan")
+    # Relationships
+    patient = relationship('Patient', back_populates='visits')
+    doctor = relationship('Doctor', back_populates='visits')
+    appointment = relationship('Appointment', back_populates='visit')
+    treatments = relationship('Treatment', back_populates='visit')
+
+    __table_args__ = (
+        Index('ix_visits_patient_date', 'patient_id', 'date'),
+    )
 
 class Appointment(db.Model, SerializerMixin):
     __tablename__ = 'appointments'
     serialize_rules = (
-        '-patient.appointments', 
+        '-patient.appointments',
         '-doctor.appointments',
-        'patient.name',
-        'doctor.name'
+        '-visit.appointment',
+        '-user.appointments'
+    )
+
+    STATUSES = ['scheduled', 'completed', 'cancelled', 'no_show']
+    
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.DateTime, nullable=False)
+    reason = db.Column(db.String(200))
+    status = db.Column(db.String(20), default='scheduled')
+    created_at = db.Column(db.DateTime, server_default=func.now())
+
+    # Foreign keys
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # Who created the appointment
+
+    # Relationships
+    patient = relationship('Patient', back_populates='appointments')
+    doctor = relationship('Doctor', back_populates='appointments')
+    visit = relationship('Visit', back_populates='appointment', uselist=False)
+    user = relationship('User', back_populates='appointments')
+
+    @validates('status')
+    def validate_status(self, key, status):
+        if status not in self.STATUSES:
+            raise ValueError(f"Invalid status. Must be one of {', '.join(self.STATUSES)}")
+        return status
+
+class Treatment(db.Model, SerializerMixin):
+    __tablename__ = 'treatments'
+    serialize_rules = (
+        '-visit.treatments',
+        '-doctor.treatments',
+        '-inventory_usage.treatment',
+        '-billing.treatment'
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.DateTime, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    cost = db.Column(db.Float, CheckConstraint('cost >= 0', name='ck_treatment_cost'))
+    procedure_code = db.Column(db.String(20))  # e.g., ADA codes
 
-    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    # Foreign keys
+    visit_id = db.Column(db.Integer, db.ForeignKey('visits.id'), nullable=False)
     doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
 
-    patient = db.relationship("Patient", back_populates="appointments")
-    doctor = db.relationship("Doctor", back_populates="appointments")
+    # Relationships
+    visit = relationship('Visit', back_populates='treatments')
+    doctor = relationship('Doctor', back_populates='treatments')
+    inventory_usage = relationship('InventoryUsage', back_populates='treatment')
+    billing = relationship('Billing', back_populates='treatment', uselist=False)
 
-class Prescription(db.Model, SerializerMixin):
-    __tablename__ = 'prescriptions'
-    serialize_rules = ('-visit.prescription',)
+class Billing(db.Model, SerializerMixin):
+    __tablename__ = 'billings'
+    serialize_rules = ('-treatment.billing', '-account.billings')
 
     id = db.Column(db.Integer, primary_key=True)
-    details = db.Column(db.Text, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    date = db.Column(db.DateTime, default=datetime.now())
+    payment_method = db.Column(db.String(20))
+    is_paid = db.Column(db.Boolean, default=False)
+    insurance_claim_id = db.Column(db.String(50))
+
+    # Foreign keys
+    treatment_id = db.Column(db.Integer, db.ForeignKey('treatments.id'), nullable=False)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False)
+
+    # Relationships
+    treatment = relationship('Treatment', back_populates='billing')
+    account = relationship('Account', back_populates='billings')
+
+class Account(db.Model, SerializerMixin):
+    __tablename__ = 'accounts'
+    serialize_rules = ('-patient.account', '-billings.account')
+
+    id = db.Column(db.Integer, primary_key=True)
+    balance = db.Column(db.Float, default=0.0)
+    last_payment_date = db.Column(db.DateTime)
+
+    # Foreign key
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), unique=True, nullable=False)
+
+    # Relationships
+    patient = relationship('Patient', back_populates='account')
+    billings = relationship('Billing', back_populates='account')
+
+    def update_balance(self, amount):
+        self.balance += amount
+        if amount < 0:  # Payment received
+            self.last_payment_date = datetime.now()
+
+class MedicalHistory(db.Model, SerializerMixin):
+    __tablename__ = 'medical_histories'
+    serialize_rules = ('-patient.medical_history',)
+
+    id = db.Column(db.Integer, primary_key=True)
+    conditions = db.Column(db.Text)
+    allergies = db.Column(db.Text)
+    medications = db.Column(db.Text)
+    notes = db.Column(db.Text)
+
+    # Foreign key
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), unique=True, nullable=False)
+
+    # Relationship
+    patient = relationship('Patient', back_populates='medical_history')
+
+class InventoryItem(db.Model, SerializerMixin):
+    __tablename__ = 'inventory_items'
+    serialize_rules = ('-usages.item', '-changes.item')
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    category = db.Column(db.String(50))  # e.g., dental, medical, office
+    quantity = db.Column(db.Integer, default=0)
+    min_quantity = db.Column(db.Integer, default=5)
+    unit_cost = db.Column(db.Float)
+    last_restocked = db.Column(db.DateTime)
+
+    # Relationships
+    usages = relationship('InventoryUsage', back_populates='item')
+    changes = relationship('InventoryChange', back_populates='item')
+
+    def check_low_stock(self):
+        return self.quantity <= self.min_quantity
+
+class InventoryUsage(db.Model, SerializerMixin):
+    __tablename__ = 'inventory_usages'
+    serialize_rules = ('-item.usages', '-treatment.inventory_usage')
+
+    id = db.Column(db.Integer, primary_key=True)
+    quantity_used = db.Column(db.Integer, nullable=False)
+    date = db.Column(db.DateTime, default=datetime.now())
+
+    # Foreign keys
+    item_id = db.Column(db.Integer, db.ForeignKey('inventory_items.id'), nullable=False)
+    treatment_id = db.Column(db.Integer, db.ForeignKey('treatments.id'), nullable=False)
+
+    # Relationships
+    item = relationship('InventoryItem', back_populates='usages')
+    treatment = relationship('Treatment', back_populates='inventory_usage')
+
+class InventoryChange(db.Model, SerializerMixin):
+    __tablename__ = 'inventory_changes'
+    serialize_rules = ('-item.changes', '-user.inventory_changes')
+
+    TYPES = ['restock', 'adjustment', 'waste']
     
-    visit_id = db.Column(db.Integer, db.ForeignKey('visits.id'), nullable=False)
-    visit = db.relationship("Visit", back_populates="prescription")
+    id = db.Column(db.Integer, primary_key=True)
+    change_type = db.Column(db.String(20), nullable=False)
+    quantity_change = db.Column(db.Integer, nullable=False)
+    notes = db.Column(db.Text)
+    date = db.Column(db.DateTime, default=datetime.now())
+
+    # Foreign keys
+    item_id = db.Column(db.Integer, db.ForeignKey('inventory_items.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    # Relationships
+    item = relationship('InventoryItem', back_populates='changes')
+    user = relationship('User', back_populates='inventory_changes')
+
+    @validates('change_type')
+    def validate_change_type(self, key, change_type):
+        if change_type not in self.TYPES:
+            raise ValueError(f"Invalid change type. Must be one of {', '.join(self.TYPES)}")
+        return change_type
+
+# Role-specific profile tables
+class Receptionist(db.Model, SerializerMixin):
+    __tablename__ = 'receptionists'
+    serialize_rules = ('-user.receptionist',)
+
+    id = db.Column(db.Integer, primary_key=True)
+    shift = db.Column(db.String(50))  # e.g., "Morning", "Evening"
+
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True)
+    user = relationship('User', back_populates='receptionist')
+
+class Technician(db.Model, SerializerMixin):
+    __tablename__ = 'technicians'
+    serialize_rules = ('-user.technician',)
+
+    id = db.Column(db.Integer, primary_key=True)
+    specialization = db.Column(db.String(50))  # e.g., "X-Ray", "Sterilization"
+
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True)
+    user = relationship('User', back_populates='technician')
