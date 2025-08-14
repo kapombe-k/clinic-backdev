@@ -14,9 +14,9 @@ from logging.handlers import RotatingFileHandler
 # Import all resources
 from resources.auth import AuthResource
 from resources.users import UserResource
-from resources.patients import PatientResource, PatientMedicalHistoryResource, PatientSearchResource
-from resources.visits import VisitResource, VisitMediaResource
-from resources.appointments import AppointmentResource
+from resources.patient import PatientResource, PatientMedicalHistoryResource, PatientSearchResource
+from resources.visit import VisitResource, VisitMediaResource
+from resources.appointment import AppointmentResource
 from resources.treatments import TreatmentResource
 from resources.billings import BillingResource
 from resources.inventory import InventoryResource
