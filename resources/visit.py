@@ -1,6 +1,6 @@
 from flask_restful import Resource, reqparse
 from flask import request, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt, get_jwt_claims
 from models import db, Visit, Patient, Doctor, Appointment, Treatment, AuditLog
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
@@ -237,3 +237,49 @@ class VisitResource(Resource):
                 "procedure_code": t.procedure_code
             } for t in visit.treatments]
         }
+    
+class PatientSearchResource(Resource):
+    @jwt_required()
+    def get(self):
+        """Search patients - PHI-protected results"""
+        claims = get_jwt_claims()
+        if claims['role'] not in ['receptionist', 'doctor', 'admin']:
+            return {"message": "Insufficient permissions to search patients"}, 403
+            
+        parser = reqparse.RequestParser()
+        parser.add_argument('q', type=str, required=True, location='args')
+        parser.add_argument('max_results', type=int, default=20, location='args')
+        args = parser.parse_args()
+        
+        # Limit results for performance
+        max_results = min(args['max_results'], 100)
+        search_term = f"%{args['q']}%"
+        
+        patients = Patient.query.filter(
+            Patient.name.ilike(search_term) |
+            Patient.phone.like(search_term) |
+            Patient.email.ilike(search_term) |
+            Patient.insurance_id.ilike(search_term)
+        ).limit(max_results).all()
+        
+        # Return minimal information for search results
+        return [{
+            "id": p.id,
+            "name": p.name,
+            "phone": p.phone[:4] + '******',  # PHI protection
+            "age": self.calculate_age(p.date_of_birth) if p.date_of_birth else None,
+            "next_appointment": self.get_next_appointment_date(p)
+        } for p in patients]
+    
+    def calculate_age(self, dob):
+        today = datetime.now().date()
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    
+    def get_next_appointment_date(self, patient):
+        next_appt = Appointment.query.filter(
+            Appointment.patient_id == patient.id,
+            Appointment.status == 'scheduled',
+            Appointment.date >= datetime.now()
+        ).order_by(Appointment.date.asc()).first()
+        
+        return next_appt.date.isoformat() if next_appt else None

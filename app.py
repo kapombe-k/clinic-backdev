@@ -33,7 +33,7 @@ app = Flask(__name__)
 
 # Database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///clinic.db"
+    "DATABASE_URL", "SUPABASE_URL"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ECHO"] = os.environ.get("SQLALCHEMY_ECHO", "false").lower() == "true"
