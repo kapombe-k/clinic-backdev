@@ -1,6 +1,6 @@
 # resources/auth.py
-from flask import request, jsonify, current_app  # Added jsonify
-from flask_restful import Resource, reqparse  # Added reqparse
+from flask import jsonify, current_app  
+from flask_restful import Resource, reqparse 
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -11,9 +11,9 @@ from flask_jwt_extended import (
     set_refresh_cookies,
     unset_jwt_cookies
 )
-from werkzeug.security import check_password_hash
+from flask_bcrypt import check_password_hash
 from models import db, User, Doctor, Receptionist, Technician, TokenBlocklist
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import bleach
 import re  # Added for email validation
 
@@ -101,8 +101,9 @@ class AuthResource(Resource):
         set_refresh_cookies(response, refresh_token)
         
         # Update last login
-        user.last_login = datetime.utcnow()
+        user.last_login = datetime.now(timezone.utc)
         db.session.commit()
+
         
         return response
 
@@ -137,7 +138,7 @@ class AuthResource(Resource):
             
             # Create role-specific profile if needed
             if data['role'] == 'doctor':
-                doctor = Doctor(user=user, specialty='General', hourly_rate=100.0)
+                doctor = Doctor(user=user, specialty='Dentist', locum_rate=35.0)
                 db.session.add(doctor)
             elif data['role'] == 'receptionist':
                 receptionist = Receptionist(user=user)

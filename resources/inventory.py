@@ -132,7 +132,7 @@ class InventoryResource(Resource):
                     user_id=get_jwt_identity(),
                     change_type=change_type,
                     quantity_change=adjustment,
-                    notes=f"Manual adjustment by user"
+                    notes="Manual adjustment by user"
                 )
                 db.session.add(change)
                 changes.append('quantity')

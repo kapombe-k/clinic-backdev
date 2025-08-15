@@ -1,9 +1,8 @@
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt_claims
-from models import db, Prescription, Visit, Doctor, Patient
+from models import db, Prescription, Visit
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
-from datetime import datetime
 
 class PrescriptionResource(Resource):
     # Reqparse configuration for input validation

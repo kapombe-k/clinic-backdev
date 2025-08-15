@@ -15,8 +15,8 @@ class DoctorResource(Resource):
                              help="Medical specialty is required")
     post_parser.add_argument('license_number', type=str, required=True, 
                              help="Medical license number is required")
-    post_parser.add_argument('hourly_rate', type=float, required=True, 
-                             help="Hourly rate is required")
+    post_parser.add_argument('monthly_rate', type=float, required=True, 
+                             help="Monthly rate is required")
     post_parser.add_argument('email', type=str, required=True, 
                              help="Email address is required")
     post_parser.add_argument('phone', type=str, required=True, 
@@ -29,8 +29,8 @@ class DoctorResource(Resource):
                              help="Updated specialty")
     patch_parser.add_argument('license_number', type=str, 
                              help="Updated license number")
-    patch_parser.add_argument('hourly_rate', type=float, 
-                             help="Updated hourly rate")
+    patch_parser.add_argument('monthly_rate', type=float, 
+                             help="Updated monthly rate")
     patch_parser.add_argument('email', type=str, 
                              help="Updated email address")
     patch_parser.add_argument('phone', type=str, 
@@ -84,8 +84,8 @@ class DoctorResource(Resource):
         data = self.post_parser.parse_args()
         
         # Validate inputs
-        if data['hourly_rate'] <= 0:
-            return {"message": "Hourly rate must be positive"}, 400
+        if data['monthly_rate'] <= 0:
+            return {"message": "Monthly rate must be positive"}, 400
             
         if not re.match(r"^[\w\s-]+$", data['specialty']):
             return {"message": "Invalid specialty format"}, 400
@@ -110,7 +110,7 @@ class DoctorResource(Resource):
             doctor = Doctor(
                 specialty=data['specialty'],
                 license_number=data['license_number'],
-                hourly_rate=data['hourly_rate'],
+                monthly_rate=data['monthly_rate'],
                 phone=data['phone'],
                 is_active=True,
                 user=user
@@ -144,10 +144,10 @@ class DoctorResource(Resource):
         data = self.patch_parser.parse_args()
         
         # Validate inputs
-        if 'hourly_rate' in data and data['hourly_rate'] is not None:
-            if data['hourly_rate'] <= 0:
-                return {"message": "Hourly rate must be positive"}, 400
-            doctor.hourly_rate = data['hourly_rate']
+        if 'monthly_rate' in data and data['monthly_rate'] is not None:
+            if data['monthly_rate'] <= 0:
+                return {"message": "monthly rate must be positive"}, 400
+            doctor.monthly_rate = data['monthly_rate']
             
         if 'license_number' in data and data['license_number'] is not None:
             # Check for duplicate license number
@@ -213,7 +213,7 @@ class DoctorResource(Resource):
             "email": doctor.user.email,
             "specialty": doctor.specialty,
             "license_number": doctor.license_number,
-            "hourly_rate": doctor.hourly_rate,
+            "monthly_rate": doctor.monthly_rate,
             "phone": doctor.phone,
             "is_active": doctor.is_active,
             "next_available": self.get_next_available(doctor),

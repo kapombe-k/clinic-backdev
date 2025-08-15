@@ -1,7 +1,7 @@
 from flask_restful import Resource, reqparse
 from flask import request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from models import db, Appointment, Patient, Doctor, User, Visit, AuditLog
+from models import db, Appointment, Patient, Doctor, User, AuditLog
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
@@ -32,11 +32,8 @@ class AppointmentResource(Resource):
                 return {"message": "Appointment not found"}, 404
                 
             # Authorization
-            if claims['role'] == 'patient' and appointment.patient.user_id != current_user_id:
+            if claims['role'] not in ['receptionist', 'admin', 'patient', 'doctor']:
                 return {"message": "Unauthorized"}, 403
-            if claims['role'] == 'doctor' and appointment.doctor.user_id != current_user_id:
-                return {"message": "Unauthorized"}, 403
-                
             return self.appointment_to_dict(appointment)
         
         # List appointments with role-based filtering
@@ -75,7 +72,7 @@ class AppointmentResource(Resource):
     @jwt_required()
     def post(self):
         claims = get_jwt()
-        allowed_roles = ['receptionist', 'admin', 'patient']
+        allowed_roles = ['receptionist', 'admin', 'patient', 'doctor']
         if claims['role'] not in allowed_roles:
             return {"message": "Insufficient permissions"}, 403
             
@@ -169,10 +166,6 @@ class AppointmentResource(Resource):
             appointment.reason = bleach.clean(data['reason'])
             changes.append('reason')
             
-        if 'duration' in data and data['duration']:
-            appointment.duration = data['duration']
-            changes.append('duration')
-            
         if not changes:
             return {"message": "No changes detected"}, 400
             
@@ -198,7 +191,7 @@ class AppointmentResource(Resource):
     @jwt_required()
     def delete(self, appointment_id):
         claims = get_jwt()
-        allowed_roles = ['receptionist', 'admin']
+        allowed_roles = ['receptionist', 'admin', 'doctor', 'patient']
         if claims['role'] not in allowed_roles:
             return {"message": "Insufficient permissions"}, 403
             

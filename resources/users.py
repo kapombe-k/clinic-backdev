@@ -4,7 +4,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from models import db, User, Doctor, Receptionist, Technician, AuditLog
 from sqlalchemy.exc import SQLAlchemyError
 import bleach
-from datetime import datetime
+#from datetime import datetime
 
 class UserResource(Resource):
     parser = reqparse.RequestParser()
@@ -50,7 +50,8 @@ class UserResource(Resource):
     def post(self):
         claims = get_jwt()
         current_user_id = get_jwt_identity()
-        if claims['role'] != 'admin':
+
+        if claims['role'] != 'admin':            
             return {"message": "Admin access required"}, 403
             
         data = self.parser.parse_args()
@@ -78,7 +79,7 @@ class UserResource(Resource):
             
             # Create role-specific profile if needed
             if data['role'] == 'doctor':
-                doctor = Doctor(user=new_user, specialty='General', hourly_rate=100.0)
+                doctor = Doctor(user=new_user, specialty='General', hourly_rate=35.0)
                 db.session.add(doctor)
             elif data['role'] == 'receptionist':
                 receptionist = Receptionist(user=new_user)

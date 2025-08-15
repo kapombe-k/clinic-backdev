@@ -80,6 +80,8 @@ class BillingResource(Resource):
     @jwt_required()
     def get(self, billing_id):
         claims = get_jwt()
+        allowed_roles = ['receptionist', 'admin', 'patient']
+
         billing = Billing.query.options(
             joinedload(Billing.treatment).joinedload(Treatment.visit).joinedload(Visit.patient),
             joinedload(Billing.account)
@@ -89,9 +91,7 @@ class BillingResource(Resource):
             return {"message": "Billing record not found"}, 404
             
         # Authorization
-        if claims['role'] == 'patient' and billing.treatment.visit.patient.user_id != get_jwt_identity():
-            return {"message": "Unauthorized"}, 403
-        if claims['role'] not in ['receptionist', 'admin']:
+        if claims['role'] not in allowed_roles:
             return {"message": "Insufficient permissions"}, 403
             
         return self.billing_to_dict(billing)

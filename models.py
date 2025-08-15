@@ -139,9 +139,9 @@ class Doctor(db.Model, SerializerMixin):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    specialty = db.Column(db.String(50), nullable=False)
+    specialty = db.Column(db.String(50), nullable=False, default='Dentist')
     license_number = db.Column(db.String(50), unique=True)
-    hourly_rate = db.Column(db.Float, nullable=False, default=100.0)
+    monthly_rate = db.Column(db.Float, nullable=False, default=35.0)
     is_active = db.Column(db.Boolean, default=True)
 
     # Relationships
@@ -151,10 +151,10 @@ class Doctor(db.Model, SerializerMixin):
     appointments = relationship('Appointment', back_populates='doctor')
     treatments = relationship('Treatment', back_populates='doctor')
 
-    @validates('hourly_rate')
-    def validate_hourly_rate(self, key, rate):
+    @validates('monthly_rate')
+    def validate_monthly_rate(self, key, rate):
         if rate < 0:
-            raise ValueError("Hourly rate cannot be negative")
+            raise ValueError("Monthly rate cannot be negative")
         return rate
 
     def get_current_schedule(self, start_date, end_date):
@@ -176,7 +176,6 @@ class Visit(db.Model, SerializerMixin):
     date = db.Column(db.DateTime, nullable=False, default=datetime.now())
     visit_type = db.Column(db.String(50))  # e.g., consultation, procedure
     notes = db.Column(db.Text)
-    duration = db.Column(db.Integer)  # in minutes
 
     # Foreign keys
     patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
@@ -347,7 +346,7 @@ class InventoryChange(db.Model, SerializerMixin):
     __tablename__ = 'inventory_changes'
     serialize_rules = ('-item.changes', '-user.inventory_changes')
 
-    TYPES = ['restock', 'adjustment', 'waste']
+    TYPES = ['restock', 'adjustment', 'waste', 'usage']
     
     id = db.Column(db.Integer, primary_key=True)
     change_type = db.Column(db.String(20), nullable=False)

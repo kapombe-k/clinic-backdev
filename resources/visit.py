@@ -21,6 +21,7 @@ class VisitResource(Resource):
     def get(self, visit_id=None):
         claims = get_jwt()
         current_user_id = get_jwt_identity()
+        allowed_roles = ['admin', 'doctor', 'patient', 'receptionist']
         
         if visit_id:
             visit = Visit.query.options(
@@ -33,10 +34,8 @@ class VisitResource(Resource):
                 return {"message": "Visit not found"}, 404
                 
             # Authorization
-            if claims['role'] == 'patient' and visit.patient.user_id != current_user_id:
-                return {"message": "Unauthorized"}, 403
-            if claims['role'] == 'doctor' and visit.doctor.user_id != current_user_id:
-                return {"message": "Unauthorized"}, 403
+            if claims['role'] not in allowed_roles:
+                return {"message": "Insufficient permissions"}, 403
                 
             return self.visit_to_dict(visit)
         
@@ -171,9 +170,6 @@ class VisitResource(Resource):
         if 'notes' in data and data['notes'] is not None:
             visit.notes = bleach.clean(data['notes'])
             changes.append('notes')
-        if 'duration' in data and data['duration']:
-            visit.duration = data['duration']
-            changes.append('duration')
             
         # Add new treatments
         new_treatments = []

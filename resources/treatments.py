@@ -74,6 +74,11 @@ class TreatmentResource(Resource):
     @jwt_required()
     def get(self, treatment_id):
         claims = get_jwt()
+        allowed_roles = ['admin', 'doctor', 'patient', 'receptionist']
+
+        if claims['role'] not in allowed_roles:
+            return {"message": "Insufficient permissions"}, 403
+        
         treatment = Treatment.query.options(
             joinedload(Treatment.visit).joinedload(Visit.patient),
             joinedload(Treatment.doctor).joinedload(Doctor.user),
@@ -81,13 +86,8 @@ class TreatmentResource(Resource):
         ).get(treatment_id)
         
         if not treatment:
-            return {"message": "Treatment not found"}, 404
-            
-        # Authorization
-        if claims['role'] == 'patient' and treatment.visit.patient.user_id != get_jwt_identity():
-            return {"message": "Unauthorized"}, 403
-        if claims['role'] == 'doctor' and treatment.doctor.user_id != get_jwt_identity():
-            return {"message": "Unauthorized"}, 403
+            return {"message": "Treatment not found"}, 404            
+        
             
         return self.treatment_to_dict(treatment)
 

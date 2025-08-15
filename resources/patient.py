@@ -89,13 +89,13 @@ class PatientResource(Resource):
         except ValueError:
             return {"message": "Invalid date format. Use YYYY-MM-DD"}, 400
             
-        # Sanitize inputs
+        # Sanitize inputs v is the variable
         sanitized = {k: bleach.clean(v) if isinstance(v, str) else v for k, v in data.items()}
         
         # Check for duplicates
-        if Patient.query.filter_by(phone=sanitized['phone']).first():
-            return {"message": "Phone number already exists"}, 409
-            
+        if Patient.query.filter_by(name=sanitized['name']).first():
+            return {"message": "Patient with this name already exists"}, 409
+
         # Create patient
         patient = Patient(
             name=sanitized['name'],
@@ -233,8 +233,8 @@ class PatientResource(Resource):
             )
         
         # PHI protection based on role
-        show_full_info = role in ['admin', 'doctor', 'receptionist']
-        
+        show_full_info = role in ['admin', 'doctor', 'receptionist', 'patient']
+
         return {
             "id": patient.id,
             "name": patient.name,
