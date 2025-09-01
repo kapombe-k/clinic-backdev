@@ -16,12 +16,12 @@ from resources.auth import AuthResource
 from resources.users import UserResource
 from resources.patient import PatientResource, PatientMedicalHistoryResource, PatientSearchResource
 from resources.visit import VisitResource
-from resources.appointment import AppointmentResource
+from resources.appointment import AppointmentResource, AppointmentSearchResource
 from resources.treatments import TreatmentResource
 from resources.billings import BillingResource
 from resources.inventory import InventoryResource
 from resources.analytics import AnalyticsResource
-from resources.doctor import DoctorResource, DoctorScheduleResource, DoctorAvailabilityResource
+from resources.doctor import DoctorResource, DoctorScheduleResource, DoctorAvailabilityResource, DoctorSearchResource
 from resources.prescription import PrescriptionResource
 
 # Load environment variables
@@ -194,6 +194,7 @@ api.add_resource(VisitResource, '/visits', '/visits/<int:visit_id>')
 
 # Appointment management
 api.add_resource(AppointmentResource, '/appointments', '/appointments/<int:appointment_id>')
+api.add_resource(AppointmentSearchResource, '/appointments/search')
 
 # Treatment management
 api.add_resource(TreatmentResource, '/treatments', '/treatments/<int:treatment_id>')
@@ -211,6 +212,7 @@ api.add_resource(AnalyticsResource, '/analytics/<string:report_type>')
 api.add_resource(DoctorResource, '/doctors', '/doctors/<int:doctor_id>')
 api.add_resource(DoctorScheduleResource, '/doctors/<int:doctor_id>/schedule')
 api.add_resource(DoctorAvailabilityResource, '/doctors/<int:doctor_id>/availability')
+api.add_resource(DoctorSearchResource, '/doctors/search')
 
 # Prescription management
 api.add_resource(PrescriptionResource, '/prescriptions', '/prescriptions/<int:prescription_id>')
@@ -244,7 +246,22 @@ def index():
                 "detail": "GET /patients/<id>",
                 "update": "PATCH /patients/<id>",
                 "medical_history": "GET/PATCH /patients/<id>/medical-history",
-                "search": "GET /patients/search?q=<term>"
+                "search": "GET /patients/search",
+                "search_params": {
+                    "q": "General search term",
+                    "name": "Search by name",
+                    "phone": "Search by phone",
+                    "email": "Search by email",
+                    "insurance_id": "Search by insurance ID",
+                    "gender": "Filter by gender (male/female/other)",
+                    "is_active": "Filter by active status",
+                    "min_age": "Minimum age filter",
+                    "max_age": "Maximum age filter",
+                    "page": "Page number (default: 1)",
+                    "per_page": "Results per page (default: 20, max: 100)",
+                    "sort_by": "Sort field (name, phone, email, gender, date_of_birth, created_at)",
+                    "sort_order": "Sort order (asc/desc)"
+                }
             },
             "visits": {
                 "create": "POST /visits",
@@ -257,7 +274,23 @@ def index():
                 "create": "POST /appointments",
                 "detail": "GET /appointments/<id>",
                 "update": "PATCH /appointments/<id>",
-                "cancel": "DELETE /appointments/<id>"
+                "cancel": "DELETE /appointments/<id>",
+                "search": "GET /appointments/search",
+                "search_params": {
+                    "q": "General search term",
+                    "patient_name": "Search by patient name",
+                    "doctor_name": "Search by doctor name",
+                    "reason": "Search by appointment reason",
+                    "status": "Filter by status (scheduled/completed/cancelled/no_show)",
+                    "start_date": "Start date filter (ISO format)",
+                    "end_date": "End date filter (ISO format)",
+                    "doctor_id": "Filter by doctor ID",
+                    "patient_id": "Filter by patient ID",
+                    "page": "Page number (default: 1)",
+                    "per_page": "Results per page (default: 20, max: 100)",
+                    "sort_by": "Sort field (date, status, reason, patient_name, doctor_name, created_at)",
+                    "sort_order": "Sort order (asc/desc)"
+                }
             },
             "treatments": {
                 "create": "POST /treatments",
@@ -286,7 +319,21 @@ def index():
                 "update": "PATCH /doctors/<id>",
                 "deactivate": "DELETE /doctors/<id>",
                 "schedule": "GET /doctors/<id>/schedule",
-                "availability": "GET /doctors/<id>/availability"
+                "availability": "GET /doctors/<id>/availability",
+                "search": "GET /doctors/search",
+                "search_params": {
+                    "q": "General search term",
+                    "name": "Search by doctor name",
+                    "specialty": "Search by specialty",
+                    "license_number": "Search by license number",
+                    "is_active": "Filter by active status",
+                    "min_rate": "Minimum monthly rate filter",
+                    "max_rate": "Maximum monthly rate filter",
+                    "page": "Page number (default: 1)",
+                    "per_page": "Results per page (default: 20, max: 100)",
+                    "sort_by": "Sort field (name, specialty, license_number, monthly_rate, is_active)",
+                    "sort_order": "Sort order (asc/desc)"
+                }
             },
             "prescriptions": {
                 "create": "POST /prescriptions",
