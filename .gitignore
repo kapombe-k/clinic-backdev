@@ -1,6 +1,5 @@
 /migrations
 /__pycache__/
 /instance
-.env
 .venv
 /resources/__pycache__
