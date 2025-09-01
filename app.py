@@ -15,12 +15,14 @@ from logging.handlers import RotatingFileHandler
 from resources.auth import AuthResource
 from resources.users import UserResource
 from resources.patient import PatientResource, PatientMedicalHistoryResource, PatientSearchResource
-from resources.visit import VisitResource, VisitMediaResource
+from resources.visit import VisitResource
 from resources.appointment import AppointmentResource
 from resources.treatments import TreatmentResource
 from resources.billings import BillingResource
 from resources.inventory import InventoryResource
 from resources.analytics import AnalyticsResource
+from resources.doctor import DoctorResource, DoctorScheduleResource, DoctorAvailabilityResource
+from resources.prescription import PrescriptionResource
 
 # Load environment variables
 load_dotenv()
@@ -32,18 +34,14 @@ app = Flask(__name__)
 # ===========================================
 
 # Database configuration
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "SUPABASE_URL"
-)
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SUPABASE_URI", "sqlite:///clinic_management.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ECHO"] = os.environ.get("SQLALCHEMY_ECHO", "false").lower() == "true"
+app.config["SQLALCHEMY_ECHO"] = True
 
 # JWT Configuration
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(
-    minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", 15)))
-app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(
-    days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", 30)))
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", 15)))
+app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", 30)))
 app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
 app.config["JWT_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
 app.config["JWT_COOKIE_CSRF_PROTECT"] = True
@@ -192,7 +190,7 @@ api.add_resource(PatientSearchResource, '/patients/search')
 
 # Visit management
 api.add_resource(VisitResource, '/visits', '/visits/<int:visit_id>')
-api.add_resource(VisitMediaResource, '/visits/<int:visit_id>/media')
+#api.add_resource(VisitMediaResource, '/visits/<int:visit_id>/media')
 
 # Appointment management
 api.add_resource(AppointmentResource, '/appointments', '/appointments/<int:appointment_id>')
@@ -208,6 +206,14 @@ api.add_resource(InventoryResource, '/inventory', '/inventory/<int:item_id>')
 
 # Analytics
 api.add_resource(AnalyticsResource, '/analytics/<string:report_type>')
+
+# Doctor management
+api.add_resource(DoctorResource, '/doctors', '/doctors/<int:doctor_id>')
+api.add_resource(DoctorScheduleResource, '/doctors/<int:doctor_id>/schedule')
+api.add_resource(DoctorAvailabilityResource, '/doctors/<int:doctor_id>/availability')
+
+# Prescription management
+api.add_resource(PrescriptionResource, '/prescriptions', '/prescriptions/<int:prescription_id>')
 
 # ===========================================
 # Root Endpoint
@@ -272,6 +278,21 @@ def index():
                 "revenue": "GET /analytics/revenue",
                 "doctor_performance": "GET /analytics/doctor-performance",
                 "patient_stats": "GET /analytics/patient-stats"
+            },
+            "doctors": {
+                "list": "GET /doctors",
+                "create": "POST /doctors",
+                "detail": "GET /doctors/<id>",
+                "update": "PATCH /doctors/<id>",
+                "deactivate": "DELETE /doctors/<id>",
+                "schedule": "GET /doctors/<id>/schedule",
+                "availability": "GET /doctors/<id>/availability"
+            },
+            "prescriptions": {
+                "create": "POST /prescriptions",
+                "detail": "GET /prescriptions/<id>",
+                "update": "PATCH /prescriptions/<id>",
+                "delete": "DELETE /prescriptions/<id>"
             }
         }
     })

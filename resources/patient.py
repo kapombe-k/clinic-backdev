@@ -11,7 +11,7 @@ import re
 class PatientResource(Resource):
     post_parser = reqparse.RequestParser()
     post_parser.add_argument('name', type=str, required=True)
-    post_parser.add_argument('gender', type=str, required=True, choices=['Male', 'Female', 'Other'])
+    post_parser.add_argument('gender', type=str, required=True, choices=['male', 'female', 'other'])
     post_parser.add_argument('date_of_birth', type=str, required=True)
     post_parser.add_argument('phone', type=str, required=True)
     post_parser.add_argument('email', type=str)
@@ -23,7 +23,7 @@ class PatientResource(Resource):
 
     patch_parser = reqparse.RequestParser()
     patch_parser.add_argument('name', type=str)
-    patch_parser.add_argument('gender', type=str, choices=['Male', 'Female', 'Other'])
+    patch_parser.add_argument('gender', type=str, choices=['male', 'female', 'other'])
     patch_parser.add_argument('phone', type=str)
     patch_parser.add_argument('email', type=str)
     patch_parser.add_argument('insurance_id', type=str)
