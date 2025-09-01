@@ -346,15 +346,215 @@ class PatientMedicalHistoryResource(Resource):
             db.session.rollback()
             current_app.logger.error(f"Medical history update failed: {str(e)}")
             return {"message": "Database error"}, 500
+def history_to_dict(self, history):
+    return {
+        "id": history.id,
+        "conditions": history.conditions,
+        "allergies": history.allergies,
+        "medications": history.medications,
+        "surgical_history": history.surgical_history,
+        "family_history": history.family_history,
+        "notes": history.notes,
+        "last_updated": history.last_updated.isoformat() if history.last_updated else None
+    }
 
-    def history_to_dict(self, history):
+
+class PatientSearchResource(Resource):
+    """Dedicated resource for advanced patient search functionality"""
+
+    @jwt_required()
+    def get(self):
+        claims = get_jwt()
+
+        # Authorization - only staff and admins can search
+        if claims['role'] not in ['admin', 'receptionist', 'doctor']:
+            return {"message": "Insufficient permissions to search patients"}, 403
+
+        # Parse search parameters
+        search_params = self._parse_search_params()
+
+        # Build query with role-based access
+        query = self._build_search_query(claims['role'], search_params)
+
+        # Apply search filters
+        query = self._apply_search_filters(query, search_params)
+
+        # Apply sorting
+        query = self._apply_sorting(query, search_params)
+
+        # Apply pagination
+        page = int(search_params.get('page', 1))
+        per_page = min(int(search_params.get('per_page', 20)), 100)  # Max 100 per page
+        offset = (page - 1) * per_page
+
+        # Get total count for pagination info
+        total_count = query.count()
+
+        # Apply pagination and execute
+        patients = query.offset(offset).limit(per_page).all()
+
+        # Format results
+        results = [self.patient_to_dict(p, claims['role']) for p in patients]
+
         return {
-            "id": history.id,
-            "conditions": history.conditions,
-            "allergies": history.allergies,
-            "medications": history.medications,
-            "surgical_history": history.surgical_history,
-            "family_history": history.family_history,
-            "notes": history.notes,
-            "last_updated": history.last_updated.isoformat() if history.last_updated else None
+            "patients": results,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total_count": total_count,
+                "total_pages": (total_count + per_page - 1) // per_page
+            },
+            "search_params": {k: v for k, v in search_params.items() if v is not None}
         }
+
+    def _parse_search_params(self):
+        """Parse and validate search parameters from request args"""
+        from flask import request
+
+        params = {}
+
+        # Search terms
+        params['q'] = request.args.get('q', '').strip()  # General search term
+        params['name'] = request.args.get('name', '').strip()
+        params['phone'] = request.args.get('phone', '').strip()
+        params['email'] = request.args.get('email', '').strip()
+        params['insurance_id'] = request.args.get('insurance_id', '').strip()
+
+        # Filters
+        params['gender'] = request.args.get('gender')
+        if params['gender'] and params['gender'] not in ['male', 'female', 'other']:
+            params['gender'] = None
+
+        params['is_active'] = request.args.get('is_active')
+        if params['is_active'] is not None:
+            params['is_active'] = params['is_active'].lower() in ['true', '1', 'yes']
+
+        # Age range
+        try:
+            params['min_age'] = int(request.args.get('min_age', 0)) if request.args.get('min_age') else None
+        except ValueError:
+            params['min_age'] = None
+
+        try:
+            params['max_age'] = int(request.args.get('max_age', 150)) if request.args.get('max_age') else None
+        except ValueError:
+            params['max_age'] = None
+
+        # Pagination
+        try:
+            params['page'] = max(1, int(request.args.get('page', 1)))
+        except ValueError:
+            params['page'] = 1
+
+        try:
+            params['per_page'] = max(1, int(request.args.get('per_page', 20)))
+        except ValueError:
+            params['per_page'] = 20
+
+        # Sorting
+        params['sort_by'] = request.args.get('sort_by', 'name')
+        params['sort_order'] = request.args.get('sort_order', 'asc').lower()
+        if params['sort_order'] not in ['asc', 'desc']:
+            params['sort_order'] = 'asc'
+
+        return params
+
+    def _build_search_query(self, role, search_params):
+        """Build base query with role-based access control"""
+        from sqlalchemy import func, extract
+
+        query = Patient.query.options(joinedload(Patient.account))
+
+        # Role-based filtering
+        if role != 'admin':
+            query = query.filter_by(is_active=True)
+
+        # Add age calculation for filtering
+        if search_params.get('min_age') or search_params.get('max_age'):
+            today = func.current_date()
+            birth_year = extract('year', Patient.date_of_birth)
+            birth_month_day = func.concat(
+                extract('month', Patient.date_of_birth),
+                '-',
+                extract('day', Patient.date_of_birth)
+            )
+            current_month_day = func.concat(
+                extract('month', today),
+                '-',
+                extract('day', today)
+            )
+
+            # Calculate age
+            age = extract('year', today) - birth_year - \
+                  func.case((current_month_day < birth_month_day, 1), else_=0)
+
+            if search_params.get('min_age'):
+                query = query.filter(age >= search_params['min_age'])
+            if search_params.get('max_age'):
+                query = query.filter(age <= search_params['max_age'])
+
+        return query
+
+    def _apply_search_filters(self, query, search_params):
+        """Apply search filters to the query"""
+        from sqlalchemy import or_, and_
+
+        # General search term (searches across multiple fields)
+        if search_params.get('q'):
+            search_term = f"%{search_params['q']}%"
+            query = query.filter(or_(
+                Patient.name.ilike(search_term),
+                Patient.phone.ilike(search_term),
+                Patient.email.ilike(search_term),
+                Patient.insurance_id.ilike(search_term)
+            ))
+
+        # Specific field searches
+        if search_params.get('name'):
+            query = query.filter(Patient.name.ilike(f"%{search_params['name']}%"))
+
+        if search_params.get('phone'):
+            query = query.filter(Patient.phone.ilike(f"%{search_params['phone']}%"))
+
+        if search_params.get('email'):
+            query = query.filter(Patient.email.ilike(f"%{search_params['email']}%"))
+
+        if search_params.get('insurance_id'):
+            query = query.filter(Patient.insurance_id.ilike(f"%{search_params['insurance_id']}%"))
+
+        # Exact filters
+        if search_params.get('gender'):
+            query = query.filter(Patient.gender == search_params['gender'])
+
+        if search_params.get('is_active') is not None:
+            query = query.filter(Patient.is_active == search_params['is_active'])
+
+        return query
+
+    def _apply_sorting(self, query, search_params):
+        """Apply sorting to the query"""
+        sort_by = search_params.get('sort_by', 'name')
+        sort_order = search_params.get('sort_order', 'asc')
+
+        # Define sortable fields
+        sort_fields = {
+            'name': Patient.name,
+            'phone': Patient.phone,
+            'email': Patient.email,
+            'gender': Patient.gender,
+            'date_of_birth': Patient.date_of_birth,
+            'created_at': Patient.created_at
+        }
+
+        # Default to name if invalid sort field
+        sort_column = sort_fields.get(sort_by, Patient.name)
+
+        if sort_order == 'desc':
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        return query
+
+    
+

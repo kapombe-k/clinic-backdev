@@ -239,3 +239,202 @@ class AppointmentResource(Resource):
             "status": appointment.status,
             "created_at": appointment.created_at.isoformat()
         }
+
+
+class AppointmentSearchResource(Resource):
+    """Dedicated resource for advanced appointment search functionality"""
+
+    @jwt_required()
+    def get(self):
+        claims = get_jwt()
+
+        # Authorization - staff and doctors can search appointments
+        if claims['role'] not in ['admin', 'receptionist', 'doctor']:
+            return {"message": "Insufficient permissions to search appointments"}, 403
+
+        # Parse search parameters
+        search_params = self._parse_search_params()
+
+        # Build query with role-based access
+        query = self._build_search_query(claims['role'], claims.get('user_id'))
+
+        # Apply search filters
+        query = self._apply_search_filters(query, search_params)
+
+        # Apply sorting
+        query = self._apply_sorting(query, search_params)
+
+        # Apply pagination
+        page = int(search_params.get('page', 1))
+        per_page = min(int(search_params.get('per_page', 20)), 100)  # Max 100 per page
+        offset = (page - 1) * per_page
+
+        # Get total count for pagination info
+        total_count = query.count()
+
+        # Apply pagination and execute
+        appointments = query.offset(offset).limit(per_page).all()
+
+        # Format results
+        results = [self.appointment_to_dict(a) for a in appointments]
+
+        return {
+            "appointments": results,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total_count": total_count,
+                "total_pages": (total_count + per_page - 1) // per_page
+            },
+            "search_params": {k: v for k, v in search_params.items() if v is not None}
+        }
+
+    def _parse_search_params(self):
+        """Parse and validate search parameters from request args"""
+        from flask import request
+
+        params = {}
+
+        # Search terms
+        params['q'] = request.args.get('q', '').strip()  # General search term
+        params['patient_name'] = request.args.get('patient_name', '').strip()
+        params['doctor_name'] = request.args.get('doctor_name', '').strip()
+        params['reason'] = request.args.get('reason', '').strip()
+
+        # Filters
+        params['status'] = request.args.get('status')
+        if params['status'] and params['status'] not in ['scheduled', 'completed', 'cancelled', 'no_show']:
+            params['status'] = None
+
+        # Date range
+        params['start_date'] = request.args.get('start_date', '').strip()
+        params['end_date'] = request.args.get('end_date', '').strip()
+
+        # Doctor/Patient IDs
+        try:
+            params['doctor_id'] = int(request.args.get('doctor_id')) if request.args.get('doctor_id') else None
+        except ValueError:
+            params['doctor_id'] = None
+
+        try:
+            params['patient_id'] = int(request.args.get('patient_id')) if request.args.get('patient_id') else None
+        except ValueError:
+            params['patient_id'] = None
+
+        # Pagination
+        try:
+            params['page'] = max(1, int(request.args.get('page', 1)))
+        except ValueError:
+            params['page'] = 1
+
+        try:
+            params['per_page'] = max(1, int(request.args.get('per_page', 20)))
+        except ValueError:
+            params['per_page'] = 20
+
+        # Sorting
+        params['sort_by'] = request.args.get('sort_by', 'date')
+        params['sort_order'] = request.args.get('sort_order', 'desc').lower()
+        if params['sort_order'] not in ['asc', 'desc']:
+            params['sort_order'] = 'desc'
+
+        return params
+
+    def _build_search_query(self, role, user_id):
+        """Build base query with role-based access control"""
+        query = Appointment.query.options(
+            joinedload(Appointment.patient),
+            joinedload(Appointment.doctor).joinedload(Doctor.user)
+        )
+
+        # Role-based filtering
+        if role == 'doctor':
+            # Doctors only see their own appointments
+            doctor = Doctor.query.filter_by(user_id=user_id).first()
+            if doctor:
+                query = query.filter_by(doctor_id=doctor.id)
+        # Admin and receptionist can see all appointments
+
+        return query
+
+    def _apply_search_filters(self, query, search_params):
+        """Apply search filters to the query"""
+        from sqlalchemy import or_, and_
+
+        # General search term (searches across multiple fields)
+        if search_params.get('q'):
+            search_term = f"%{search_params['q']}%"
+            query = query.filter(or_(
+                Appointment.reason.ilike(search_term),
+                Appointment.patient.has(Patient.name.ilike(search_term)),
+                Appointment.doctor.has(Doctor.user.has(User.name.ilike(search_term)))
+            ))
+
+        # Specific field searches
+        if search_params.get('patient_name'):
+            query = query.filter(Appointment.patient.has(Patient.name.ilike(f"%{search_params['patient_name']}%")))
+
+        if search_params.get('doctor_name'):
+            query = query.filter(Appointment.doctor.has(Doctor.user.has(User.name.ilike(f"%{search_params['doctor_name']}%"))))
+
+        if search_params.get('reason'):
+            query = query.filter(Appointment.reason.ilike(f"%{search_params['reason']}%"))
+
+        # Exact filters
+        if search_params.get('status'):
+            query = query.filter(Appointment.status == search_params['status'])
+
+        if search_params.get('doctor_id'):
+            query = query.filter(Appointment.doctor_id == search_params['doctor_id'])
+
+        if search_params.get('patient_id'):
+            query = query.filter(Appointment.patient_id == search_params['patient_id'])
+
+        # Date range filtering
+        if search_params.get('start_date'):
+            try:
+                start_date = datetime.fromisoformat(search_params['start_date'])
+                query = query.filter(Appointment.date >= start_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date, skip filter
+
+        if search_params.get('end_date'):
+            try:
+                end_date = datetime.fromisoformat(search_params['end_date'])
+                query = query.filter(Appointment.date <= end_date)
+            except (ValueError, TypeError):
+                pass  # Invalid date, skip filter
+
+        return query
+
+    def _apply_sorting(self, query, search_params):
+        """Apply sorting to the query"""
+        sort_by = search_params.get('sort_by', 'date')
+        sort_order = search_params.get('sort_order', 'desc')
+
+        # Define sortable fields
+        sort_fields = {
+            'date': Appointment.date,
+            'status': Appointment.status,
+            'reason': Appointment.reason,
+            'created_at': Appointment.created_at,
+            'patient_name': Patient.name,
+            'doctor_name': User.name
+        }
+
+        # Handle joined table sorting
+        if sort_by in ['patient_name']:
+            query = query.join(Appointment.patient)
+            sort_column = Patient.name
+        elif sort_by in ['doctor_name']:
+            query = query.join(Appointment.doctor).join(Doctor.user)
+            sort_column = User.name
+        else:
+            sort_column = sort_fields.get(sort_by, Appointment.date)
+
+        if sort_order == 'desc':
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        return query

@@ -3,6 +3,7 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt_claims
 from models import db, Doctor, User, Appointment
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 from datetime import datetime, timedelta
 import re
 
@@ -318,3 +319,173 @@ class DoctorAvailabilityResource(Resource):
         # Simplified implementation
         # Production would integrate with scheduling system
         return (requested_date + timedelta(days=1)).replace(hour=9, minute=0).isoformat()
+
+
+class DoctorSearchResource(Resource):
+    """Dedicated resource for advanced doctor search functionality"""
+
+    @jwt_required()
+    def get(self):
+        claims = get_jwt_claims()
+
+        # Authorization - all authenticated users can search doctors
+        # But patients and receptionists only see active doctors
+
+        # Parse search parameters
+        search_params = self._parse_search_params()
+
+        # Build query with role-based access
+        query = self._build_search_query(claims['role'])
+
+        # Apply search filters
+        query = self._apply_search_filters(query, search_params)
+
+        # Apply sorting
+        query = self._apply_sorting(query, search_params)
+
+        # Apply pagination
+        page = int(search_params.get('page', 1))
+        per_page = min(int(search_params.get('per_page', 20)), 100)  # Max 100 per page
+        offset = (page - 1) * per_page
+
+        # Get total count for pagination info
+        total_count = query.count()
+
+        # Apply pagination and execute
+        doctors = query.offset(offset).limit(per_page).all()
+
+        # Format results
+        results = [self.doctor_to_dict(d) for d in doctors]
+
+        return {
+            "doctors": results,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total_count": total_count,
+                "total_pages": (total_count + per_page - 1) // per_page
+            },
+            "search_params": {k: v for k, v in search_params.items() if v is not None}
+        }
+
+    def _parse_search_params(self):
+        """Parse and validate search parameters from request args"""
+        from flask import request
+
+        params = {}
+
+        # Search terms
+        params['q'] = request.args.get('q', '').strip()  # General search term
+        params['name'] = request.args.get('name', '').strip()
+        params['specialty'] = request.args.get('specialty', '').strip()
+        params['license_number'] = request.args.get('license_number', '').strip()
+
+        # Filters
+        params['is_active'] = request.args.get('is_active')
+        if params['is_active'] is not None:
+            params['is_active'] = params['is_active'].lower() in ['true', '1', 'yes']
+
+        # Monthly rate range
+        try:
+            params['min_rate'] = float(request.args.get('min_rate', 0)) if request.args.get('min_rate') else None
+        except ValueError:
+            params['min_rate'] = None
+
+        try:
+            params['max_rate'] = float(request.args.get('max_rate', 100000)) if request.args.get('max_rate') else None
+        except ValueError:
+            params['max_rate'] = None
+
+        # Pagination
+        try:
+            params['page'] = max(1, int(request.args.get('page', 1)))
+        except ValueError:
+            params['page'] = 1
+
+        try:
+            params['per_page'] = max(1, int(request.args.get('per_page', 20)))
+        except ValueError:
+            params['per_page'] = 20
+
+        # Sorting
+        params['sort_by'] = request.args.get('sort_by', 'name')
+        params['sort_order'] = request.args.get('sort_order', 'asc').lower()
+        if params['sort_order'] not in ['asc', 'desc']:
+            params['sort_order'] = 'asc'
+
+        return params
+
+    def _build_search_query(self, role):
+        """Build base query with role-based access control"""
+        query = Doctor.query.options(joinedload(Doctor.user))
+
+        # Role-based filtering
+        if role in ['patient', 'receptionist']:
+            query = query.filter_by(is_active=True)
+        # Admin and doctors can see all doctors
+
+        return query
+
+    def _apply_search_filters(self, query, search_params):
+        """Apply search filters to the query"""
+        from sqlalchemy import or_
+
+        # General search term (searches across multiple fields)
+        if search_params.get('q'):
+            search_term = f"%{search_params['q']}%"
+            query = query.filter(or_(
+                Doctor.user.has(User.name.ilike(search_term)),
+                Doctor.specialty.ilike(search_term),
+                Doctor.license_number.ilike(search_term)
+            ))
+
+        # Specific field searches
+        if search_params.get('name'):
+            query = query.filter(Doctor.user.has(User.name.ilike(f"%{search_params['name']}%")))
+
+        if search_params.get('specialty'):
+            query = query.filter(Doctor.specialty.ilike(f"%{search_params['specialty']}%"))
+
+        if search_params.get('license_number'):
+            query = query.filter(Doctor.license_number.ilike(f"%{search_params['license_number']}%"))
+
+        # Exact filters
+        if search_params.get('is_active') is not None:
+            query = query.filter(Doctor.is_active == search_params['is_active'])
+
+        # Rate range filtering
+        if search_params.get('min_rate') is not None:
+            query = query.filter(Doctor.monthly_rate >= search_params['min_rate'])
+
+        if search_params.get('max_rate') is not None:
+            query = query.filter(Doctor.monthly_rate <= search_params['max_rate'])
+
+        return query
+
+    def _apply_sorting(self, query, search_params):
+        """Apply sorting to the query"""
+        sort_by = search_params.get('sort_by', 'name')
+        sort_order = search_params.get('sort_order', 'asc')
+
+        # Define sortable fields
+        sort_fields = {
+            'name': User.name,
+            'specialty': Doctor.specialty,
+            'license_number': Doctor.license_number,
+            'monthly_rate': Doctor.monthly_rate,
+            'is_active': Doctor.is_active
+        }
+
+        # Handle joined table sorting
+        if sort_by in ['name']:
+            query = query.join(Doctor.user)
+            sort_column = User.name
+        else:
+            sort_column = sort_fields.get(sort_by, User.name)
+
+        if sort_order == 'desc':
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        return query
