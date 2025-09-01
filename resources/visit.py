@@ -1,6 +1,6 @@
 from flask_restful import Resource, reqparse
 from flask import request, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt, get_jwt_claims
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from models import db, Visit, Patient, Doctor, Appointment, Treatment, AuditLog
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
@@ -238,7 +238,7 @@ class PatientSearchResource(Resource):
     @jwt_required()
     def get(self):
         """Search patients - PHI-protected results"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if claims['role'] not in ['receptionist', 'doctor', 'admin']:
             return {"message": "Insufficient permissions to search patients"}, 403
             

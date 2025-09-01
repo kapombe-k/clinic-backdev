@@ -1,6 +1,6 @@
 from flask_restful import Resource, reqparse
 from flask import request
-from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt_claims
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from models import db, Doctor, User, Appointment
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
@@ -42,7 +42,7 @@ class DoctorResource(Resource):
     @jwt_required()
     def get(self, doctor_id=None):
         """Get doctor details with authorization checks"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         
         if doctor_id:
             doctor = Doctor.query.get(doctor_id)
@@ -78,7 +78,7 @@ class DoctorResource(Resource):
     @jwt_required()
     def post(self):
         """Create new doctor (admin only)"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if claims['role'] != 'admin':
             return {"message": "Only admins can create doctors"}, 403
             
@@ -130,7 +130,7 @@ class DoctorResource(Resource):
     @jwt_required()
     def patch(self, doctor_id):
         """Update doctor information (admin and the doctor themselves)"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         doctor = Doctor.query.get(doctor_id)
         if not doctor:
             return {"message": "Doctor not found"}, 404
@@ -188,7 +188,7 @@ class DoctorResource(Resource):
     @jwt_required()
     def delete(self, doctor_id):
         """Deactivate doctor (admin only) - Soft delete"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if claims['role'] != 'admin':
             return {"message": "Only admins can deactivate doctors"}, 403
             
@@ -240,7 +240,7 @@ class DoctorScheduleResource(Resource):
     @jwt_required()
     def get(self, doctor_id):
         """Get doctor's schedule for a given date range"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         doctor = Doctor.query.get(doctor_id)
         if not doctor or not doctor.is_active:
             return {"message": "Doctor not found"}, 404
@@ -326,7 +326,7 @@ class DoctorSearchResource(Resource):
 
     @jwt_required()
     def get(self):
-        claims = get_jwt_claims()
+        claims = get_jwt()
 
         # Authorization - all authenticated users can search doctors
         # But patients and receptionists only see active doctors

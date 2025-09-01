@@ -1,5 +1,5 @@
 from flask_restful import Resource, reqparse
-from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt_claims
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from models import db, Prescription, Visit
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
@@ -54,7 +54,7 @@ class PrescriptionResource(Resource):
             
         # Check access permissions
         current_user_id = get_jwt_identity()
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if not self.validate_prescription_access(prescription, current_user_id, claims['role']):
             return {"message": "Unauthorized access to prescription"}, 403
             
@@ -63,7 +63,7 @@ class PrescriptionResource(Resource):
     @jwt_required()
     def post(self):
         """Create new prescription (doctors and admins only)"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if claims['role'] not in ['doctor', 'admin']:
             return {"message": "Insufficient permissions to create prescriptions"}, 403
             
@@ -111,7 +111,7 @@ class PrescriptionResource(Resource):
     @jwt_required()
     def patch(self, prescription_id):
         """Update prescription (doctors and admins only)"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if claims['role'] not in ['doctor', 'admin']:
             return {"message": "Insufficient permissions to update prescriptions"}, 403
             
@@ -151,7 +151,7 @@ class PrescriptionResource(Resource):
     @jwt_required()
     def delete(self, prescription_id):
         """Delete prescription (admins only)"""
-        claims = get_jwt_claims()
+        claims = get_jwt()
         if claims['role'] != 'admin':
             return {"message": "Only admins can delete prescriptions"}, 403
             
