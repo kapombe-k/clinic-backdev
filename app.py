@@ -34,7 +34,7 @@ app = Flask(__name__)
 # ===========================================
 
 # Database configuration
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SUPABASE_URI", "sqlite:///clinic_management.db")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SUPABASE_URI", "DATABASE_URI")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ECHO"] = True
 
@@ -160,16 +160,13 @@ if not app.debug:
     app.logger.info('Application startup')
 
 # ===========================================
-# After Request Handler (CORS)
+# After Request Handler
 # ===========================================
 
 @app.after_request
 def after_request(response):
-    # Add CORS headers to every response
-    response.headers.add('Access-Control-Allow-Origin', ', '.join(app.config["CORS_ORIGINS"]))
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Headers', ', '.join(app.config["CORS_ALLOW_HEADERS"]))
-    response.headers.add('Access-Control-Allow-Methods', ', '.join(app.config["CORS_METHODS"]))
+    # CORS headers are handled by Flask-CORS extension
+    # No need to manually add them here to avoid duplication
     return response
 
 # ===========================================
@@ -177,8 +174,8 @@ def after_request(response):
 # ===========================================
 
 # Authentication endpoints
-api.add_resource(AuthResource, '/auth/login', '/auth/register', 
-                 '/auth/refresh-token', '/auth/logout', endpoint='auth')
+api.add_resource(AuthResource, '/auth/login', '/auth/register',
+                 '/auth/refresh-token', '/auth/logout', '/auth/me', endpoint='auth')
 
 # User management
 api.add_resource(UserResource, '/users', '/users/<int:user_id>')
@@ -231,7 +228,8 @@ def index():
                 "login": "POST /auth/login",
                 "register": "POST /auth/register",
                 "refresh": "POST /auth/refresh-token",
-                "logout": "POST /auth/logout"
+                "logout": "POST /auth/logout",
+                "me": "GET /auth/me"
             },
             "users": {
                 "list": "GET /users",

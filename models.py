@@ -47,11 +47,14 @@ class User(db.Model):
     last_login = db.Column(db.DateTime)
 
     # --- Relationships ---
-    doctor_profile = relationship("Doctor", uselist=False, back_populates="user", cascade="all, delete-orphan")
-    receptionist_profile = relationship("Receptionist", uselist=False, back_populates="user", cascade="all, delete-orphan")
-    technician_profile = relationship("Technician", uselist=False, back_populates="user", cascade="all, delete-orphan")
+    doctor = relationship("Doctor", uselist=False, back_populates="user", cascade="all, delete-orphan")
+    receptionist = relationship("Receptionist", uselist=False, back_populates="user", cascade="all, delete-orphan")
+    technician = relationship("Technician", uselist=False, back_populates="user", cascade="all, delete-orphan")
 
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    appointments = relationship("Appointment", back_populates="user", cascade="all, delete-orphan")
+    inventory_changes = relationship("InventoryChange", back_populates="user", cascade="all, delete-orphan")
+    blocked_tokens = relationship("TokenBlocklist", back_populates="user", cascade="all, delete-orphan")
 
     # --- Password handling ---
     @property
@@ -440,7 +443,7 @@ class AuditLog(db.Model, SerializerMixin):
     details = db.Column(db.Text)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
-    user = relationship('User', backref='audit_logs')
+    user = relationship('User', back_populates='audit_logs')
 
     def __repr__(self):
         return f'<AuditLog {self.action} by {self.user_id}>'
@@ -471,7 +474,7 @@ class TokenBlocklist(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'))
     expires = db.Column(db.DateTime(timezone=True), nullable=False)
 
-    user = relationship('User', backref='blocked_tokens')
+    user = relationship('User', back_populates='blocked_tokens')
 
     def __repr__(self):
         return f'<BlockedToken {self.jti}>'

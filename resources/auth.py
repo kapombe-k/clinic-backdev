@@ -71,7 +71,7 @@ class AuthResource(Resource):
             current_app.logger.warning(f"Login attempt for deactivated account: {sanitized_email}")
             return {"error": "Account deactivated"}, 403
             
-        if not check_password_hash(user.password_hash, data['password']):
+        if not check_password_hash(user._password_hash, data['password']):
             current_app.logger.info(f"Failed login for: {sanitized_email}")
             self._record_failed_attempt(sanitized_email)
             return {"error": "Invalid credentials"}, 401
@@ -138,7 +138,7 @@ class AuthResource(Resource):
             
             # Create role-specific profile if needed
             if data['role'] == 'doctor':
-                doctor = Doctor(user=user, specialty='Dentist', locum_rate=35.0)
+                doctor = Doctor(user=user, specialty='Dentist', monthly_rate=35.0)
                 db.session.add(doctor)
             elif data['role'] == 'receptionist':
                 receptionist = Receptionist(user=user)
@@ -199,14 +199,34 @@ class AuthResource(Resource):
         jti = token['jti']
         token_type = token['type']
         expires = datetime.fromtimestamp(token['exp'], timezone.utc)
-        
+
         # Add token to blocklist
         db.session.add(TokenBlocklist(jti=jti, type=token_type, expires=expires))
         db.session.commit()
-        
+
         response = jsonify({"message": "Logout successful"})
         unset_jwt_cookies(response)
         return response
+
+    @jwt_required()
+    def get_current_user(self):
+        """Get current authenticated user information"""
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+
+        if not user:
+            return {"error": "User not found"}, 404
+
+        if not user.is_active:
+            return {"error": "User account is deactivated"}, 403
+
+        return {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "is_active": user.is_active
+        }
 
     # Security helper methods
     def _is_rate_limited(self, email):
