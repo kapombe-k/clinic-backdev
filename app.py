@@ -34,7 +34,11 @@ app = Flask(__name__)
 # ===========================================
 
 # Database configuration
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SUPABASE_URI", "DATABASE_URI")
+ENVIRONMENT = os.environ.get("ENVIRONMENT")
+if ENVIRONMENT == "production":
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SUPABASE_URL")
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ECHO"] = True
 
