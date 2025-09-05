@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_restful import Api
@@ -12,7 +12,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 # Import all resources
-from resources.auth import AuthResource
+from resources.auth import LoginResource, RegisterResource, RefreshTokenResource, LogoutResource, MeResource
 from resources.users import UserResource
 from resources.patient import PatientResource, PatientMedicalHistoryResource, PatientSearchResource
 from resources.visit import VisitResource
@@ -48,15 +48,18 @@ app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.environ.get("J
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", 30)))
 app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
 app.config["JWT_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
-app.config["JWT_COOKIE_CSRF_PROTECT"] = True
-app.config["JWT_CSRF_CHECK_FORM"] = True
+# Temporarily disable CSRF for debugging
+app.config["JWT_COOKIE_CSRF_PROTECT"] = False
+app.config["JWT_CSRF_CHECK_FORM"] = False
 app.config["JWT_COOKIE_SAMESITE"] = "Lax"  # Strict in production if possible
 
 # CORS Configuration
 app.config["CORS_SUPPORTS_CREDENTIALS"] = True
-app.config["CORS_ORIGINS"] = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-app.config["CORS_ALLOW_HEADERS"] = ["Content-Type", "Authorization"]
+allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://localhost:3000")
+app.config["CORS_ORIGINS"] = [origin.strip() for origin in allowed_origins_str.split(",")]
+app.config["CORS_ALLOW_HEADERS"] = ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"]
 app.config["CORS_METHODS"] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+app.config["CORS_EXPOSE_HEADERS"] = ["Set-Cookie"]
 
 # Rate limiting configuration (using Redis if available)
 redis_url = os.environ.get("REDIS_URL")
@@ -83,15 +86,32 @@ jwt = JWTManager(app)
 # Initialize bcrypt
 bcrypt = Bcrypt(app)
 
-# Initialize API
-api = Api(app)
+# Initialize API with CORS support
+api = Api(app, catch_all_404s=True)
 
-# Initialize CORS
-CORS(app, 
-     resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}},
-     supports_credentials=app.config["CORS_SUPPORTS_CREDENTIALS"],
-     allow_headers=app.config["CORS_ALLOW_HEADERS"],
-     methods=app.config["CORS_METHODS"])
+# Get BASE_URL for CORS configuration
+BASE_URL = f"http://{app.config['HOST']}:{app.config['PORT']}"
+
+# CORS setup with proper credentials support
+CORS(
+    app,
+    resources={
+        r"/*": {
+            "origins": [
+                "http://127.0.0.1:5173",
+                "http://localhost:5173",
+                "https://localhost:5173",  # Production frontend
+                BASE_URL
+            ],
+            "supports_credentials": True,
+            "allow_headers": ["Content-Type", "Authorization", "X-CSRF-Token", "Accept"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "expose_headers": ["Access-Control-Allow-Origin"]
+        }
+    }
+)
+
+print(f"🔧 CORS configured for origins: {app.config['CORS_ORIGINS']}")
 
 # ===========================================
 # JWT Callbacks
@@ -106,7 +126,10 @@ def check_if_token_revoked(jwt_header, jwt_payload):
 
 @jwt.user_identity_loader
 def user_identity_lookup(user):
-    return user.id
+    # Handle both user objects and string IDs
+    if hasattr(user, 'id'):
+        return user.id
+    return user
 
 @jwt.user_lookup_loader
 def user_lookup_callback(_jwt_header, jwt_data):
@@ -169,8 +192,18 @@ if not app.debug:
 
 @app.after_request
 def after_request(response):
-    # CORS headers are handled by Flask-CORS extension
-    # No need to manually add them here to avoid duplication
+    # Debug logging for CORS issues
+    origin = request.headers.get('Origin')
+    if request.method == 'OPTIONS':
+        print(f"🔄 OPTIONS request to: {request.path} from origin: {origin}")
+    elif 'auth' in request.path:
+        print(f"🔐 Auth request: {request.method} {request.path} from origin: {origin}")
+    
+    # Log CORS headers for debugging
+    if origin:
+        print(f"🔧 Request from origin: {origin}")
+        print(f"🔧 Response CORS header: {response.headers.get('Access-Control-Allow-Origin', 'NOT SET')}")
+
     return response
 
 # ===========================================
@@ -178,8 +211,11 @@ def after_request(response):
 # ===========================================
 
 # Authentication endpoints
-api.add_resource(AuthResource, '/auth/login', '/auth/register',
-                 '/auth/refresh-token', '/auth/logout', '/auth/me', endpoint='auth')
+api.add_resource(LoginResource, '/auth/login')
+api.add_resource(RegisterResource, '/auth/register')
+api.add_resource(RefreshTokenResource, '/auth/refresh-token')
+api.add_resource(LogoutResource, '/auth/logout')
+api.add_resource(MeResource, '/auth/me')
 
 # User management
 api.add_resource(UserResource, '/users', '/users/<int:user_id>')
