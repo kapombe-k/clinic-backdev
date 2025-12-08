@@ -3,3 +3,6 @@
 /instance
 .venv
 /resources/__pycache__
+/instance
+CLINIC_LLM_README.md
+.env
