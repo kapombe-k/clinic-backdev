@@ -55,6 +55,17 @@ app.config["JWT_COOKIE_SAMESITE"] = "Lax"  # Strict in production if possible
 
 # Get BASE_URL for CORS configuration
 BASE_URL = os.environ.get('ALLOWED_ORIGIN')
+if not BASE_URL:
+    print("❌ WARNING: ALLOWED_ORIGIN environment variable is not set!")
+    BASE_URL = "http://127.0.0.1:5173"
+else:
+    BASE_URL = BASE_URL.rstrip('/')
+    # Ensure protocol is included
+    if not BASE_URL.startswith('http://') and not BASE_URL.startswith('https://'):
+        print(f"⚠️ WARNING: ALLOWED_ORIGIN missing protocol, adding http://")
+        BASE_URL = f"http://{BASE_URL}"
+
+print(f"CORS configured for origin: {BASE_URL}")
 
 # CORS Configuration
 app.config["CORS_SUPPORTS_CREDENTIALS"] = True
@@ -91,12 +102,59 @@ bcrypt = Bcrypt(app)
 # CORS setup with proper credentials support
 CORS(
     app,
-    origins=BASE_URL,  
+    origins=[BASE_URL],  # List format
     supports_credentials=True,
     allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     expose_headers=["Set-Cookie"]
 )
+
+# ===========================================
+# Handle OPTIONS Preflight Requests Explicitly
+# (Fixes Flask-RESTful CORS issue)
+# ===========================================
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        origin = request.headers.get('Origin')
+        
+        if origin == BASE_URL:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Max-Age'] = '86400'
+            print(f"✅ OPTIONS preflight handled for: {request.path}")
+        else:
+            print(f"⚠️ OPTIONS request from non-allowed origin: {origin}")
+        
+        return response
+
+
+# ===========================================
+# Custom API Class for CORS Error Handling
+# ===========================================
+
+class CORSApi(Api):
+    """Custom Api class that properly handles CORS for error responses"""
+    
+    def handle_error(self, e):
+        """Ensure CORS headers are added to error responses"""
+        response = super().handle_error(e)
+        
+        # Get the origin from the request
+        origin = request.headers.get('Origin')
+        
+        # Add CORS headers to error responses
+        if origin == BASE_URL:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        
+        return response
 
 # Initialize API with CORS support
 api = Api(app, catch_all_404s=True)
@@ -190,9 +248,10 @@ def after_request(response):
         print(f"🔐 Auth request: {request.method} {request.path} from origin: {origin}")
     
     # Log CORS headers for debugging
-    if origin:
-        print(f"🔧 Request from origin: {origin}")
-        print(f"🔧 Response CORS header: {response.headers.get('Access-Control-Allow-Origin', 'NOT SET')}")
+    if origin == BASE_URL and 'Access-Control-Allow-Origin' not in response.headers:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        print(f"🔧 Added missing CORS headers in after_request")
 
     return response
 
