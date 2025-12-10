@@ -25,9 +25,9 @@ class LoginResource(Resource):
         self.parser.add_argument('password', type=str, required=True,
                                 help="Password is required", location='json')
 
-    def options(self):
-        """Handle OPTIONS request for CORS preflight"""
-        return {}, 200
+    # def options(self):
+    #     """Handle OPTIONS request for CORS preflight"""
+    #     return {}, 200
 
     def post(self):
         return self.login()
@@ -128,9 +128,9 @@ class RegisterResource(Resource):
                                 choices=['patient', 'doctor', 'receptionist', 'technician'], location='json')
         self.parser.add_argument('phone', type=str, location='json')
 
-    def options(self):
-        """Handle OPTIONS request for CORS preflight"""
-        return {}, 200
+    # def options(self):
+    #     """Handle OPTIONS request for CORS preflight"""
+    #     return {}, 200
 
     def post(self):
         return self.register()
@@ -206,9 +206,9 @@ class RegisterResource(Resource):
 
 
 class RefreshTokenResource(Resource):
-    def options(self):
-        """Handle OPTIONS request for CORS preflight"""
-        return {}, 200
+    # def options(self):
+    #     """Handle OPTIONS request for CORS preflight"""
+    #     return {}, 200
 
     @jwt_required(refresh=True)
     def post(self):
@@ -229,9 +229,9 @@ class RefreshTokenResource(Resource):
 
 
 class LogoutResource(Resource):
-    def options(self):
-        """Handle OPTIONS request for CORS preflight"""
-        return {}, 200
+    # def options(self):
+    #     """Handle OPTIONS request for CORS preflight"""
+    #     return {}, 200
 
     @jwt_required(verify_type=False)
     def post(self):
@@ -250,9 +250,9 @@ class LogoutResource(Resource):
 
 
 class MeResource(Resource):
-    def options(self):
-        """Handle OPTIONS request for CORS preflight"""
-        return {}, 200
+    # def options(self):
+    #     """Handle OPTIONS request for CORS preflight"""
+    #     return {}, 200
 
     @jwt_required()
     def get(self):

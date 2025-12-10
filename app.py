@@ -43,30 +43,32 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ECHO"] = True
 
 # JWT Configuration
-app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "super-secret-key")
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", 15)))
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", 30)))
 app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
-app.config["JWT_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
+app.config["JWT_COOKIE_SECURE"] = os.environ.get("FLASK_ENV")
 # Temporarily disable CSRF for debugging
 app.config["JWT_COOKIE_CSRF_PROTECT"] = False
 app.config["JWT_CSRF_CHECK_FORM"] = False
 app.config["JWT_COOKIE_SAMESITE"] = "Lax"  # Strict in production if possible
 
+# Get BASE_URL for CORS configuration
+BASE_URL = os.environ.get('ALLOWED_ORIGIN')
+
 # CORS Configuration
 app.config["CORS_SUPPORTS_CREDENTIALS"] = True
-allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://localhost:3000")
-app.config["CORS_ORIGINS"] = [origin.strip() for origin in allowed_origins_str.split(",")]
+app.config["CORS_ORIGINS"] = os.environ.get('ALLOWED_ORIGIN')
 app.config["CORS_ALLOW_HEADERS"] = ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"]
 app.config["CORS_METHODS"] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 app.config["CORS_EXPOSE_HEADERS"] = ["Set-Cookie"]
 
-# Rate limiting configuration (using Redis if available)
-redis_url = os.environ.get("REDIS_URL")
-if redis_url:
-    app.config["RATELIMIT_STORAGE_URL"] = redis_url
-    app.config["RATELIMIT_STRATEGY"] = "fixed-window"
-    app.config["RATELIMIT_DEFAULT"] = "100 per minute"
+# # Rate limiting configuration (using Redis if available)
+# redis_url = os.environ.get("REDIS_URL")
+# if redis_url:
+#     app.config["RATELIMIT_STORAGE_URL"] = redis_url
+#     app.config["RATELIMIT_STRATEGY"] = "fixed-window"
+#     app.config["RATELIMIT_DEFAULT"] = "100 per minute"
 
 # Server configuration
 app.config["HOST"] = os.environ.get("HOST", "0.0.0.0")
@@ -86,30 +88,18 @@ jwt = JWTManager(app)
 # Initialize bcrypt
 bcrypt = Bcrypt(app)
 
-# Initialize API with CORS support
-api = Api(app, catch_all_404s=True)
-
-# Get BASE_URL for CORS configuration
-BASE_URL = f"http://{app.config['HOST']}:{app.config['PORT']}"
-
 # CORS setup with proper credentials support
 CORS(
     app,
-    resources={
-        r"/*": {
-            "origins": [
-                "http://127.0.0.1:5173",
-                "http://localhost:5173",
-                "https://localhost:5173",  # Production frontend
-                BASE_URL
-            ],
-            "supports_credentials": True,
-            "allow_headers": ["Content-Type", "Authorization", "X-CSRF-Token", "Accept"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "expose_headers": ["Access-Control-Allow-Origin"]
-        }
-    }
+    origins=BASE_URL,  
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    expose_headers=["Set-Cookie"]
 )
+
+# Initialize API with CORS support
+api = Api(app, catch_all_404s=True)
 
 print(f"🔧 CORS configured for origins: {app.config['CORS_ORIGINS']}")
 
