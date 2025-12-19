@@ -17,9 +17,60 @@ class AnalyticsResource(Resource):
             return self.doctor_performance()
         elif report_type == 'patient-stats':
             return self.patient_stats()
+        elif report_type == 'dashboard-stats':
+            return self.dashboard_stats()
         else:
             return {"message": "Invalid report type"}, 400
 
+    def dashboard_stats(self):
+        today = datetime.now()
+        start_of_month = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_end = start_of_month - timedelta(days=1)
+        start_of_last_month = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # 1. Patients
+        total_patients = Patient.query.count()
+        new_patients_this_month = Patient.query.filter(Patient.created_at >= start_of_month).count()
+        new_patients_last_month = Patient.query.filter(
+            and_(Patient.created_at >= start_of_last_month, Patient.created_at <= last_month_end)
+        ).count()
+
+        # 2. Appointments
+        total_appointments = Appointment.query.count()
+        appointments_this_month = Appointment.query.filter(Appointment.date >= start_of_month).count()
+        appointments_last_month = Appointment.query.filter(
+            and_(Appointment.date >= start_of_last_month, Appointment.date <= last_month_end)
+        ).count()
+
+        # 3. Revenue
+        total_revenue = db.session.query(func.sum(Billing.amount)).scalar() or 0
+        revenue_this_month = db.session.query(func.sum(Billing.amount)).filter(Billing.date >= start_of_month).scalar() or 0
+        revenue_last_month = db.session.query(func.sum(Billing.amount)).filter(
+            and_(Billing.date >= start_of_last_month, Billing.date <= last_month_end)
+        ).scalar() or 0
+
+        # 4. Other Stats
+        # Active treatments: Approximation using scheduled appointments today
+        start_of_day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+        active_treatments = Appointment.query.filter(
+            and_(Appointment.date >= start_of_day, Appointment.status == 'scheduled')
+        ).count()
+        
+        pending_payments = db.session.query(func.sum(Billing.amount)).filter(Billing.is_paid == False).scalar() or 0
+
+        return {
+            "totalPatients": total_patients,
+            "newPatientsThisMonth": new_patients_this_month,
+            "patientsLastMonth": new_patients_last_month,
+            "totalAppointments": total_appointments,
+            "appointmentsThisMonth": appointments_this_month,
+            "appointmentsLastMonth": appointments_last_month,
+            "totalRevenue": float(total_revenue),
+            "revenueThisMonth": float(revenue_this_month),
+            "revenueLastMonth": float(revenue_last_month),
+            "activeTreatments": active_treatments,
+            "pendingPayments": float(pending_payments)
+        }
     def revenue_report(self):
         # Get date range (default: current month)
         start_date = request.args.get('start_date', datetime.now().replace(day=1).date().isoformat())
