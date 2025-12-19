@@ -1,6 +1,7 @@
 /migrations
 /__pycache__/
 /instance
+/logs
 .venv
 /resources/__pycache__
 /instance
