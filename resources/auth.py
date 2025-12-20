@@ -233,16 +233,17 @@ class LogoutResource(Resource):
     #     """Handle OPTIONS request for CORS preflight"""
     #     return {}, 200
 
-    @jwt_required(verify_type=False)
+    @jwt_required(verify_type=False, optional=True)
     def post(self):
         token = get_jwt()
-        jti = token['jti']
-        token_type = token['type']
-        expires = datetime.fromtimestamp(token['exp'], timezone.utc)
+        if token:
+            jti = token['jti']
+            token_type = token['type']
+            expires = datetime.fromtimestamp(token['exp'], timezone.utc)
 
-        # Add token to blocklist
-        db.session.add(TokenBlocklist(jti=jti, type=token_type, expires=expires))
-        db.session.commit()
+            # Add token to blocklist
+            db.session.add(TokenBlocklist(jti=jti, type=token_type, expires=expires))
+            db.session.commit()
 
         response = jsonify({"message": "Logout successful"})
         unset_jwt_cookies(response)
