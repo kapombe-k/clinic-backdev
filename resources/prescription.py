@@ -40,9 +40,13 @@ class PrescriptionResource(Resource):
         # Receptionist can access all prescriptions
         return role == 'receptionist'
 
-    @jwt_required()
+    @jwt_required(optional=True)
     def get(self, prescription_id):
         """Get prescription details with authorization check"""
+        current_user_id = get_jwt_identity()
+        if not current_user_id:
+            return {"message": "Authentication required"}, 401
+
         # Eager load relationships to avoid N+1 queries
         prescription = Prescription.query.options(
             joinedload(Prescription.visit).joinedload(Visit.doctor),
@@ -53,7 +57,6 @@ class PrescriptionResource(Resource):
             return {"message": "Prescription not found"}, 404
             
         # Check access permissions
-        current_user_id = get_jwt_identity()
         claims = get_jwt()
         if not self.validate_prescription_access(prescription, current_user_id, claims['role']):
             return {"message": "Unauthorized access to prescription"}, 403

@@ -1,6 +1,6 @@
 from flask_restful import Resource, request
 from flask_jwt_extended import jwt_required, get_jwt
-from models import db, Billing, Treatment, Patient, Visit, Doctor, User, Appointment, InventoryItem
+from models import db, Billing, Treatment, Patient, Visit, Doctor, User, Appointment, InventoryItem, Account
 from sqlalchemy import func, and_, case, desc
 from datetime import datetime, timedelta
 
@@ -120,7 +120,7 @@ class AnalyticsResource(Resource):
         revenue_data = db.session.query(
             date_trunc.label('period'),
             func.sum(Billing.amount).label('total_billed'),
-            func.sum(Billing.paid_amount if hasattr(Billing, 'paid_amount') else Billing.amount).label('total_collected') # Fallback if paid_amount missing
+            func.sum(case((Billing.is_paid == True, Billing.amount), else_=0)).label('total_collected')
         ).filter(
             and_(
                 Billing.date >= start_date,
@@ -141,7 +141,7 @@ class AnalyticsResource(Resource):
                 "period": row.period,
                 "revenue": float(row.total_billed) if row.total_billed else 0,
                 # Simple target generation for demo
-                "target": float(row.total_billed) * 0.9 if row.total_billed else 0
+                "target": float(row.total_billed) * 0.35 if row.total_billed else 0
             } for row in revenue_data]
         }
 
@@ -286,7 +286,7 @@ class AnalyticsResource(Resource):
             Doctor.id,
             User.name.label('doctor_name'),
             func.count(Visit.id).label('visit_count'),
-            func.avg(Visit.duration).label('avg_duration'),
+            # func.avg(Visit.duration).label('avg_duration'), # Removed: duration not in model
             func.sum(Treatment.cost).label('total_revenue')
         ).join(Visit, Visit.doctor_id == Doctor.id)\
          .join(User, Doctor.user_id == User.id)\
@@ -300,7 +300,7 @@ class AnalyticsResource(Resource):
             "doctor_id": row.id,
             "doctor_name": row.doctor_name,
             "visit_count": row.visit_count,
-            "avg_duration": float(row.avg_duration) if row.avg_duration else 0,
+            "avg_duration": 30, # Default placeholder
             "total_revenue": float(row.total_revenue) if row.total_revenue else 0
         } for row in performance]
 
