@@ -314,9 +314,7 @@ server/
 │   └── treatments.py           # Treatment resources
 ├── migrations/                 # Database migrations
 │   └── versions/               # Migration files
-├── tests.py                    # Unit tests
-├── create_admin.py             # Admin user creation script
-├── install_deps.py             # Dependency installation helper
+├── create.py                   # User creation script
 ├── Pipfile                     # Python dependencies
 ├── Pipfile.lock                # Locked dependencies
 ├── .env                        # Environment variables
