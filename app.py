@@ -56,13 +56,13 @@ app.config["JWT_COOKIE_SAMESITE"] = "Lax"  # Strict in production if possible
 # Get BASE_URL for CORS configuration
 BASE_URL = os.environ.get('ALLOWED_ORIGIN')
 if not BASE_URL:
-    print("❌ WARNING: ALLOWED_ORIGIN environment variable is not set!")
+    print("WARNING: ALLOWED_ORIGIN environment variable is not set!")
     BASE_URL = "http://127.0.0.1:5173"
 else:
     BASE_URL = BASE_URL.rstrip('/')
     # Ensure protocol is included
     if not BASE_URL.startswith('http://') and not BASE_URL.startswith('https://'):
-        print(f"⚠️ WARNING: ALLOWED_ORIGIN missing protocol, adding http://")
+        print(f"WARNING: ALLOWED_ORIGIN missing protocol, adding http://")
         BASE_URL = f"http://{BASE_URL}"
 
 print(f"CORS configured for origin: {BASE_URL}")
@@ -126,9 +126,9 @@ def handle_preflight():
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Max-Age'] = '86400'
-            print(f"✅ OPTIONS preflight handled for: {request.path}")
+            print(f"OPTIONS preflight handled for: {request.path}")
         else:
-            print(f"⚠️ OPTIONS request from non-allowed origin: {origin}")
+            print(f"OPTIONS request from non-allowed origin: {origin}")
         
         return response
 
@@ -159,7 +159,7 @@ class CORSApi(Api):
 # Initialize API with CORS support
 api = Api(app, catch_all_404s=True)
 
-print(f"🔧 CORS configured for origins: {app.config['CORS_ORIGINS']}")
+print(f"CORS configured for origins: {app.config['CORS_ORIGINS']}")
 
 # ===========================================
 # JWT Callbacks
@@ -243,15 +243,15 @@ def after_request(response):
     # Debug logging for CORS issues
     origin = request.headers.get('Origin')
     if request.method == 'OPTIONS':
-        print(f"🔄 OPTIONS request to: {request.path} from origin: {origin}")
+        print(f"OPTIONS request to: {request.path} from origin: {origin}")
     elif 'auth' in request.path:
-        print(f"🔐 Auth request: {request.method} {request.path} from origin: {origin}")
+        print(f"Auth request: {request.method} {request.path} from origin: {origin}")
     
     # Log CORS headers for debugging
     if origin == BASE_URL and 'Access-Control-Allow-Origin' not in response.headers:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-        print(f"🔧 Added missing CORS headers in after_request")
+        print(f"Added missing CORS headers in after_request")
 
     return response
 
