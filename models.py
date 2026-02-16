@@ -112,6 +112,12 @@ class Patient(db.Model, SerializerMixin):
     
     created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
 
+    # Relationships
+    visits = relationship('Visit', back_populates='patient', cascade='all, delete-orphan', passive_deletes=True)
+    appointments = relationship('Appointment', back_populates='patient', cascade='all, delete-orphan', passive_deletes=True)
+    account = relationship('Account', back_populates='patient', uselist=False, cascade='all, delete-orphan')
+    medical_history = relationship('MedicalHistory', back_populates='patient', uselist=False, cascade='all, delete-orphan')
+
     # ... rest of relationships stay the same ...
 
     @validates('phone')
@@ -222,6 +228,7 @@ class Visit(db.Model, SerializerMixin):
     appointment = relationship('Appointment', back_populates='visit', uselist=False)
     treatments = relationship('Treatment', back_populates='visit', cascade='all, delete-orphan', passive_deletes=True)
     prescriptions = relationship('Prescription', back_populates='visit', cascade='all, delete-orphan', passive_deletes=True)
+    billings = relationship('Billing', back_populates='visit', cascade='all, delete-orphan', passive_deletes=True)
 
     __table_args__ = (
         Index('ix_visits_patient_date', 'patient_id', 'date'),
