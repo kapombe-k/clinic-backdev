@@ -106,9 +106,15 @@ class Patient(db.Model, SerializerMixin):
     # NEW: Insurance provider name (e.g., "K.P.L.C.", "UAP", "DEKUT")
     insurance_provider = db.Column(db.String(100), nullable=True)
     
+    # NEW: Emergency Contact info
+    emergency_contact_name = db.Column(db.String(100), nullable=True)
+    emergency_contact_phone = db.Column(db.String(20), nullable=True)
+
     # NEW: Review flags for imported data
     needs_review = db.Column(db.Boolean, default=False)
     review_notes = db.Column(db.Text, nullable=True)
+    
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
     
     created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
 
