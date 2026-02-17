@@ -47,11 +47,23 @@ app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", 15)))
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", 30)))
 app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
-app.config["JWT_COOKIE_SECURE"] = os.environ.get("FLASK_ENV")
-# Temporarily disable CSRF for debugging
+
+# Cookie configuration for cross-origin requests
+# In production, use SameSite="None" with Secure=True (HTTPS required)
+# In development (localhost), we need to handle this specially
+if ENVIRONMENT == "production":
+    app.config["JWT_COOKIE_SECURE"] = True
+    app.config["JWT_COOKIE_SAMESITE"] = "None"  # Required for cross-origin cookies
+else:
+    # For development (localhost), set Secure=False but use SameSite=None
+    # Note: Some browsers may reject SameSite=None without Secure=True
+    # For local development, you may need to use a proxy instead
+    app.config["JWT_COOKIE_SECURE"] = False
+    app.config["JWT_COOKIE_SAMESITE"] = None  # Disable SameSite for local development
+
+# Disable CSRF for debugging
 app.config["JWT_COOKIE_CSRF_PROTECT"] = False
 app.config["JWT_CSRF_CHECK_FORM"] = False
-app.config["JWT_COOKIE_SAMESITE"] = "Lax"  # Strict in production if possible
 
 # Get BASE_URL for CORS configuration
 BASE_URL = os.environ.get('ALLOWED_ORIGIN')
@@ -217,6 +229,27 @@ def unprocessable(error):
 def server_error(error):
     app.logger.error(f"Server error: {str(error)}")
     return jsonify({"error": "Internal server error"}), 500
+
+# JWT Error Handler
+from flask_jwt_extended.exceptions import NoAuthorizationError
+
+@app.errorhandler(NoAuthorizationError)
+def handle_no_authorization(error):
+    """Handle missing JWT cookie error - useful for debugging CORS/cookie issues"""
+    app.logger.warning(f"JWT Authorization Error: {str(error)}")
+    app.logger.warning(f"Request Origin: {request.headers.get('Origin')}")
+    app.logger.warning(f"Request Cookies: {list(request.cookies.keys())}")
+    return jsonify({
+        "error": "Missing authentication token",
+        "message": "The access token cookie was not found. Please log in again.",
+        "debug": {
+            "cookie_present": "access_token_cookie" in request.cookies,
+            "origin": request.headers.get('Origin'),
+            "jwt_location": app.config.get('JWT_TOKEN_LOCATION'),
+            "samesite": app.config.get('JWT_COOKIE_SAMESITE'),
+            "secure": app.config.get('JWT_COOKIE_SECURE'),
+        }
+    }), 401
 
 # ===========================================
 # Logging Configuration
