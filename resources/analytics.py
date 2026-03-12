@@ -19,6 +19,8 @@ class AnalyticsResource(Resource):
             return self.patient_stats()
         elif report_type == 'dashboard-stats':
             return self.dashboard_stats()
+        elif report_type == 'dashboard-full':
+            return self.dashboard_full()
         elif report_type == 'appointments':
             return self.appointment_stats()
         elif report_type == 'recent-activity':
@@ -275,6 +277,28 @@ class AnalyticsResource(Resource):
         activities.sort(key=lambda x: x['timestamp'], reverse=True)
         
         return activities[:10] # Return top 10
+
+    def dashboard_full(self):
+        # Default parameters for sub-reports
+        today = datetime.now()
+        start_of_year = today.replace(month=1, day=1, hour=0, minute=0, second=0)
+        
+        # We need: dashboard_stats, revenue_report (monthly), appointment_stats, patient_stats (growth), recent_activity
+        
+        # Inject standard params for revenue
+        request.args = request.args.copy()
+        if not request.args.get('group_by'):
+            request.args['group_by'] = 'monthly'
+        if not request.args.get('start_date'):
+            request.args['start_date'] = start_year_str = start_of_year.strftime('%Y-%m-%d')
+
+        return {
+            "stats": self.dashboard_stats(),
+            "revenue": self.revenue_report(),
+            "appointments": self.appointment_stats(),
+            "patientStats": self.patient_stats(),
+            "recentActivity": self.recent_activity()
+        }
 
     def doctor_performance(self):
         # Date range (default: last 30 days)
