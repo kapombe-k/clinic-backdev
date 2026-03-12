@@ -116,7 +116,7 @@ class AppointmentResource(Resource):
         
         try:
             db.session.add(appointment)
-            db.session.commit()
+            db.session.flush()
             
             # Audit log
             audit = AuditLog(
@@ -170,8 +170,6 @@ class AppointmentResource(Resource):
             return {"message": "No changes detected"}, 400
             
         try:
-            db.session.commit()
-            
             # Audit log
             audit = AuditLog(
                 user_id=get_jwt_identity(),
@@ -203,8 +201,6 @@ class AppointmentResource(Resource):
         appointment.status = 'cancelled'
         
         try:
-            db.session.commit()
-            
             # Audit log
             audit = AuditLog(
                 user_id=get_jwt_identity(),
