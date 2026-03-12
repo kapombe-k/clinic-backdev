@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from models import db
 import logging
 from logging.handlers import RotatingFileHandler
+from flask_compress import Compress
+from flask_caching import Cache
 
 # Import all resources
 from resources.auth import LoginResource, RegisterResource, RefreshTokenResource, LogoutResource, MeResource
@@ -40,7 +42,11 @@ if ENVIRONMENT == "production":
 else:
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ECHO"] = True
+app.config["SQLALCHEMY_ECHO"] = False # Disabled for performance
+
+# Caching Configuration
+app.config["CACHE_TYPE"] = "SimpleCache"
+app.config["CACHE_DEFAULT_TIMEOUT"] = 300
 
 # JWT Configuration
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
@@ -104,6 +110,16 @@ app.config["PORT"] = int(os.environ.get("PORT", 5000))
 # Initialize database
 db.init_app(app)
 migrate = Migrate(app, db)
+
+# Initialize Compression
+compress = Compress()
+compress.init_app(app)
+
+# Initialize Caching
+cache = Cache()
+cache.init_app(app)
+# Bind cache to app for the auth logic
+app.cache = {}
 
 # Initialize JWT
 jwt = JWTManager(app)
