@@ -8,6 +8,77 @@ from datetime import datetime
 import bleach
 import re
 
+def get_last_visit(patient):
+    # Now optimized, but fallback exists for single items
+    if hasattr(patient, 'last_visit_date') and patient.last_visit_date:
+        return patient.last_visit_date
+        
+    visit = Visit.query.filter_by(patient_id=patient.id)\
+               .order_by(Visit.date.desc()).first()
+    return visit.date.isoformat() if visit and visit.date else None
+
+def get_next_appointment(patient):
+    if hasattr(patient, 'next_appointment_date') and patient.next_appointment_date:
+        return patient.next_appointment_date
+        
+    appointment = Appointment.query.filter(
+        Appointment.patient_id == patient.id,
+        Appointment.status == 'scheduled',
+        Appointment.date >= datetime.now()
+    ).order_by(Appointment.date.asc()).first()
+    return appointment.date.isoformat() if appointment and appointment.date else None
+
+
+def patient_to_dict(patient, role):
+    # Calculate age
+    age = None
+    if patient.date_of_birth:
+        today = datetime.now().date()
+        age = today.year - patient.date_of_birth.year - (
+            (today.month, today.day) < 
+            (patient.date_of_birth.month, patient.date_of_birth.day)
+        )
+    
+    # PHI protection based on role
+    show_full_info = role in ['admin', 'doctor', 'receptionist', 'patient']
+
+    return {
+        "id": patient.id,
+        "name": patient.name,
+        "gender": patient.gender,
+        "age": age,
+        "phone": patient.phone if show_full_info else patient.phone[:4] + '******',
+        "email": patient.email if show_full_info else patient.email[0] + '****@' + patient.email.split('@')[-1] if patient.email else None,
+        "insurance_id": patient.insurance_id if show_full_info else "***",
+        "emergency_contact": {
+            "name": patient.emergency_contact_name,
+            "phone": patient.emergency_contact_phone if show_full_info else "***"
+        } if patient.emergency_contact_name else None,
+        "is_active": patient.is_active,
+        "account_balance": patient.account.balance if show_full_info and patient.account else None,
+        "last_visit": get_last_visit(patient),
+        "next_appointment": get_next_appointment(patient),
+        "visits": [{
+            "id": v.id,
+            "date": v.date.isoformat() if v.date else None,
+            "visit_type": v.visit_type,
+            "notes": v.notes,
+            "patient_id": v.patient_id,
+        } for v in (patient.visits or [])]
+    }
+
+def history_to_dict(history):
+    return {
+        "id": history.id,
+        "conditions": history.conditions,
+        "allergies": history.allergies,
+        "medications": history.medications,
+        "surgical_history": history.surgical_history,
+        "family_history": history.family_history,
+        "notes": history.notes,
+        "last_updated": history.last_updated.isoformat() if history.last_updated else None
+    }
+
 class PatientResource(Resource):
     post_parser = reqparse.RequestParser()
     post_parser.add_argument('name', type=str, required=True)
@@ -31,6 +102,34 @@ class PatientResource(Resource):
     patch_parser.add_argument('emergency_contact_phone', type=str)
     patch_parser.add_argument('is_active', type=bool)
 
+    @classmethod
+    def _apply_pagination(cls, query):
+        from flask import request
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 200, type=int)
+        per_page = min(per_page, 200) # Safety limit
+        
+        offset = (page - 1) * per_page
+        total_count = query.count()
+        patients = query.offset(offset).limit(per_page).all()
+        
+        return patients, {
+            "page": page,
+            "per_page": per_page,
+            "total_count": total_count,
+            "total_pages": (total_count + per_page - 1) // per_page
+        }
+        
+    @classmethod
+    def _optimize_query(cls, query):
+        from sqlalchemy.orm import selectinload
+        # Optimize subqueries for last visit and next appointment to prevent N+1
+        return query.options(
+            selectinload(Patient.account),
+            selectinload(Patient.visits).load_only(Visit.date, Visit.id, Visit.visit_type, Visit.notes, Visit.patient_id),
+            selectinload(Patient.appointments)
+        )
+
     @jwt_required()
     def get(self, patient_id=None):
         claims = get_jwt()
@@ -51,23 +150,44 @@ class PatientResource(Resource):
             if claims['role'] == 'patient' and patient.user_id != current_user_id:
                 return {"message": "Unauthorized"}, 403
                 
-            return self.patient_to_dict(patient, claims['role'])
+            return patient_to_dict(patient, claims['role'])
         
         # List patients with role-based access
-        query = Patient.query.options(joinedload(Patient.account))
+        query = self._optimize_query(Patient.query)
         
         if claims['role'] == 'patient':
             patient = Patient.query.filter_by(user_id=current_user_id).first()
             if not patient:
                 return {"message": "Patient profile not found"}, 404
-            return [self.patient_to_dict(patient, claims['role'])]
+            return {"patients": [patient_to_dict(patient, claims['role'])], "pagination": { "page": 1, "per_page": 1, "total_count": 1, "total_pages": 1 }}
         
         # Staff roles can see all patients
         if claims['role'] != 'admin':
             query = query.filter_by(is_active=True)
             
-        patients = query.order_by(Patient.name).limit(200).all()
-        return [self.patient_to_dict(p, claims['role']) for p in patients]
+        query = query.order_by(Patient.name)
+        patients, pagination = self._apply_pagination(query)
+        
+        # We process next appointments and last visits more efficiently on loaded collections
+        for p in patients:
+            if hasattr(p, 'visits') and p.visits:
+                sorted_visits = sorted(p.visits, key=lambda v: getattr(v, 'date', None) or datetime.min, reverse=True)
+                p.last_visit_date = sorted_visits[0].date.isoformat() if sorted_visits and hasattr(sorted_visits[0], 'date') and sorted_visits[0].date else None
+            else:
+                p.last_visit_date = None
+                
+            if hasattr(p, 'appointments') and p.appointments:
+                now = datetime.now()
+                future_appts = [a for a in p.appointments if a.status == 'scheduled' and getattr(a, 'date', None) and getattr(a, 'date', None) >= now]
+                sorted_appts = sorted(future_appts, key=lambda a: getattr(a, 'date', None))
+                p.next_appointment_date = sorted_appts[0].date.isoformat() if sorted_appts else None
+            else:
+                p.next_appointment_date = None
+                
+        return {
+            "patients": [patient_to_dict(p, claims['role']) for p in patients],
+            "pagination": pagination
+        }
 
     @jwt_required()
     def post(self):
@@ -136,7 +256,9 @@ class PatientResource(Resource):
             db.session.add(medical_history)
             if user: 
                 db.session.add(user)
-            db.session.commit()
+            
+            # Flush to get the patient ID for the audit log
+            db.session.flush()
             
             # Audit log
             audit = AuditLog(
@@ -149,7 +271,7 @@ class PatientResource(Resource):
             db.session.add(audit)
             db.session.commit()
             
-            return self.patient_to_dict(patient, claims['role']), 201
+            return patient_to_dict(patient, claims['role']), 201
         except SQLAlchemyError as e:
             db.session.rollback()
             current_app.logger.error(f"Patient creation failed: {str(e)}")
@@ -204,8 +326,6 @@ class PatientResource(Resource):
             return {"message": "No changes detected"}, 400
             
         try:
-            db.session.commit()
-            
             # Audit log
             audit = AuditLog(
                 user_id=get_jwt_identity(),
@@ -216,56 +336,11 @@ class PatientResource(Resource):
             db.session.add(audit)
             db.session.commit()
             
-            return self.patient_to_dict(patient, claims['role'])
+            return patient_to_dict(patient, claims['role'])
         except SQLAlchemyError as e:
             db.session.rollback()
             current_app.logger.error(f"Patient update failed: {str(e)}")
             return {"message": "Database error"}, 500
-
-    def patient_to_dict(self, patient, role):
-        # Calculate age
-        age = None
-        if patient.date_of_birth:
-            today = datetime.now().date()
-            age = today.year - patient.date_of_birth.year - (
-                (today.month, today.day) < 
-                (patient.date_of_birth.month, patient.date_of_birth.day)
-            )
-        
-        # PHI protection based on role
-        show_full_info = role in ['admin', 'doctor', 'receptionist', 'patient']
-
-        return {
-            "id": patient.id,
-            "name": patient.name,
-            "gender": patient.gender,
-            "age": age,
-            "phone": patient.phone if show_full_info else patient.phone[:4] + '******',
-            "email": patient.email if show_full_info else patient.email[0] + '****@' + patient.email.split('@')[-1] if patient.email else None,
-            "insurance_id": patient.insurance_id if show_full_info else "***",
-            "emergency_contact": {
-                "name": patient.emergency_contact_name,
-                "phone": patient.emergency_contact_phone if show_full_info else "***"
-            } if patient.emergency_contact_name else None,
-            "is_active": patient.is_active,
-            "account_balance": patient.account.balance if show_full_info and patient.account else None,
-            "last_visit": self.get_last_visit(patient),
-            "next_appointment": self.get_next_appointment(patient)
-        }
-    
-    def get_last_visit(self, patient):
-        visit = Visit.query.filter_by(patient_id=patient.id)\
-                   .order_by(Visit.date.desc()).first()
-        return visit.date.isoformat() if visit else None
-    
-    def get_next_appointment(self, patient):
-        appointment = Appointment.query.filter(
-            Appointment.patient_id == patient.id,
-            Appointment.status == 'scheduled',
-            Appointment.date >= datetime.now()
-        ).order_by(Appointment.date.asc()).first()
-        return appointment.date.isoformat() if appointment else None
-
 
 class PatientMedicalHistoryResource(Resource):
     parser = reqparse.RequestParser()
@@ -295,7 +370,7 @@ class PatientMedicalHistoryResource(Resource):
         if not patient.medical_history:
             return {"message": "Medical history not found"}, 404
             
-        return self.history_to_dict(patient.medical_history)
+        return history_to_dict(patient.medical_history)
 
     @jwt_required()
     def patch(self, patient_id):
@@ -329,8 +404,6 @@ class PatientMedicalHistoryResource(Resource):
             return {"message": "No changes detected"}, 400
             
         try:
-            db.session.commit()
-            
             # Audit log
             audit = AuditLog(
                 user_id=get_jwt_identity(),
@@ -341,22 +414,11 @@ class PatientMedicalHistoryResource(Resource):
             db.session.add(audit)
             db.session.commit()
             
-            return self.history_to_dict(patient.medical_history)
+            return history_to_dict(patient.medical_history)
         except SQLAlchemyError as e:
             db.session.rollback()
             current_app.logger.error(f"Medical history update failed: {str(e)}")
             return {"message": "Database error"}, 500
-def history_to_dict(self, history):
-    return {
-        "id": history.id,
-        "conditions": history.conditions,
-        "allergies": history.allergies,
-        "medications": history.medications,
-        "surgical_history": history.surgical_history,
-        "family_history": history.family_history,
-        "notes": history.notes,
-        "last_updated": history.last_updated.isoformat() if history.last_updated else None
-    }
 
 
 class PatientSearchResource(Resource):
@@ -394,7 +456,7 @@ class PatientSearchResource(Resource):
         patients = query.offset(offset).limit(per_page).all()
 
         # Format results
-        results = [self.patient_to_dict(p, claims['role']) for p in patients]
+        results = [patient_to_dict(p, claims['role']) for p in patients]
 
         return {
             "patients": results,
@@ -461,7 +523,7 @@ class PatientSearchResource(Resource):
 
     def _build_search_query(self, role, search_params):
         """Build base query with role-based access control"""
-        from sqlalchemy import func, extract
+        from sqlalchemy import func, extract, case
 
         query = Patient.query.options(joinedload(Patient.account))
 
@@ -486,7 +548,7 @@ class PatientSearchResource(Resource):
 
             # Calculate age
             age = extract('year', today) - birth_year - \
-                  func.case((current_month_day < birth_month_day, 1), else_=0)
+                  case((current_month_day < birth_month_day, 1), else_=0)
 
             if search_params.get('min_age'):
                 query = query.filter(age >= search_params['min_age'])
@@ -529,6 +591,22 @@ class PatientSearchResource(Resource):
         if search_params.get('is_active') is not None:
             query = query.filter(Patient.is_active == search_params['is_active'])
 
+        # Date range filtering based on Patient.created_at
+        if search_params.get('start_date'):
+            try:
+                start_date = datetime.strptime(search_params['start_date'], '%Y-%m-%d')
+                query = query.filter(Patient.created_at >= start_date)
+            except ValueError:
+                # Invalid date format – ignore filter
+                pass
+        if search_params.get('end_date'):
+            try:
+                end_date = datetime.strptime(search_params['end_date'], '%Y-%m-%d')
+                query = query.filter(Patient.created_at <= end_date)
+            except ValueError:
+                # Invalid date format – ignore filter
+                pass
+
         return query
 
     def _apply_sorting(self, query, search_params):
@@ -557,4 +635,3 @@ class PatientSearchResource(Resource):
         return query
 
     
-
